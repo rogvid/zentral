@@ -1,0 +1,423 @@
+"""Ticket operations. All authorisation for ticket data lives here."""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from sqlalchemy import ColumnElement, and_, false, func, or_, select, true
+
+from zentral.db.models import (
+    Contact,
+    DeliveryStatus,
+    Job,
+    Message,
+    MessageKind,
+    Team,
+    Ticket,
+    TicketStatus,
+    User,
+    utcnow,
+)
+from zentral.schemas import (
+    MessageCreate,
+    MessageOut,
+    RequesterOut,
+    TicketCreate,
+    TicketOut,
+    TicketPage,
+    TicketUpdate,
+)
+from zentral.security.crypto import get_cipher
+from zentral.security.rbac import Permission as P
+from zentral.security.redaction import redact
+from zentral.services.context import Ctx
+from zentral.services.errors import NotFound, PermissionDenied, ValidationFailed
+
+# Free-text search decrypts in the application, so it only looks at a bounded
+# window of the most recent tickets the caller may see.
+SEARCH_WINDOW = 1000
+ERASED = "[erased]"
+
+
+@dataclass(slots=True)
+class TicketFilter:
+    status: list[str] | None = None
+    priority: str | None = None
+    category: str | None = None
+    team_id: uuid.UUID | None = None
+    assignee_id: str | None = None
+    unassigned: bool = False
+    requester_email: str | None = None
+    q: str | None = None
+    limit: int = 50
+    offset: int = 0
+
+
+def ticket_key(ctx: Ctx, ticket_id: int) -> str:
+    return f"{ctx.settings.ticket_prefix}-{ticket_id}"
+
+
+# --- visibility ----------------------------------------------------------------
+
+
+def visible_clause(ctx: Ctx) -> ColumnElement[bool]:
+    """SQL predicate selecting the tickets the caller is allowed to see."""
+    if not ctx.can(P.TICKET_READ):
+        return false()
+    if ctx.can(P.TICKET_READ_ALL):
+        return true()
+    clauses: list[ColumnElement[bool]] = [Ticket.assignee_id == ctx.principal.subject]
+    if ctx.team_ids:
+        clauses.append(Ticket.team_id.in_(ctx.team_ids))
+    if ctx.can(P.TICKET_TRIAGE):
+        clauses.append(Ticket.team_id.is_(None))
+    return or_(*clauses)
+
+
+def is_visible(ctx: Ctx, ticket: Ticket) -> bool:
+    if not ctx.can(P.TICKET_READ):
+        return False
+    if ctx.can(P.TICKET_READ_ALL) or ticket.assignee_id == ctx.principal.subject:
+        return True
+    if ticket.team_id is None:
+        return ctx.can(P.TICKET_TRIAGE)
+    return ticket.team_id in ctx.team_ids
+
+
+async def load_ticket(ctx: Ctx, ticket_id: int) -> Ticket:
+    """Load a ticket the caller may see.
+
+    A ticket outside the caller's scope is reported as *not found* so its
+    existence is not disclosed, while the attempt is still audited as denied.
+    """
+    ctx.require(P.TICKET_READ, "ticket", str(ticket_id))
+    ticket = await ctx.session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise NotFound("ticket")
+    if not is_visible(ctx, ticket):
+        raise PermissionDenied("ticket:scope", "ticket", str(ticket_id))
+    return ticket
+
+
+# --- presentation ---------------------------------------------------------------
+
+
+async def _user_names(ctx: Ctx, ids: set[str]) -> dict[str, str]:
+    if not ids:
+        return {}
+    rows = await ctx.session.execute(
+        select(User.id, User.display_name, User.email).where(User.id.in_(ids))
+    )
+    return {r.id: (r.display_name or r.email or r.id) for r in rows}
+
+
+def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
+    pii = ctx.can(P.TICKET_READ_PII)
+    requester = None
+    if ticket.requester is not None:
+        contact = ticket.requester
+        if pii:
+            requester = RequesterOut(
+                id=contact.id,
+                display_name=contact.display_name or contact.email or "Unknown requester",
+                email=contact.email,
+            )
+        else:
+            requester = RequesterOut(
+                id=contact.id, display_name=f"Requester {str(contact.id)[:8]}", email=None
+            )
+    return TicketOut(
+        id=ticket.id,
+        key=ticket_key(ctx, ticket.id),
+        subject=ticket.subject if pii else redact(ticket.subject),
+        status=TicketStatus(ticket.status),
+        priority=ticket.priority,  # type: ignore[arg-type]
+        category=ticket.category,
+        tags=list(ticket.tags or []),
+        channel=ticket.channel,
+        team_id=ticket.team_id,
+        team_name=ticket.team.name if ticket.team else None,
+        assignee_id=ticket.assignee_id,
+        assignee_name=names.get(ticket.assignee_id) if ticket.assignee_id else None,
+        requester=requester,
+        ai_category=ticket.ai_category,
+        ai_priority=ticket.ai_priority,
+        ai_confidence=ticket.ai_confidence,
+        ai_summary=ticket.ai_summary,
+        created_at=ticket.created_at,
+        updated_at=ticket.updated_at,
+        resolved_at=ticket.resolved_at,
+        pii_redacted=not pii,
+    )
+
+
+async def present_ticket(ctx: Ctx, ticket: Ticket) -> TicketOut:
+    names = await _user_names(ctx, {ticket.assignee_id} if ticket.assignee_id else set())
+    return _present(ctx, ticket, names)
+
+
+# --- queries ----------------------------------------------------------------------
+
+
+async def get_ticket(ctx: Ctx, ticket_id: int) -> TicketOut:
+    ticket = await load_ticket(ctx, ticket_id)
+    ctx.audit("ticket.read", "ticket", ticket.id, pii=ctx.can(P.TICKET_READ_PII))
+    return await present_ticket(ctx, ticket)
+
+
+async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
+    ctx.require(P.TICKET_READ, "ticket")
+    limit = max(1, min(f.limit, 100))
+    offset = max(0, f.offset)
+    where: list[ColumnElement[bool]] = [visible_clause(ctx)]
+    if f.status:
+        where.append(Ticket.status.in_(f.status))
+    if f.priority:
+        where.append(Ticket.priority == f.priority)
+    if f.category:
+        where.append(Ticket.category == f.category)
+    if f.team_id:
+        where.append(Ticket.team_id == f.team_id)
+    if f.assignee_id:
+        where.append(Ticket.assignee_id == f.assignee_id)
+    if f.unassigned:
+        where.append(Ticket.assignee_id.is_(None))
+    if f.requester_email:
+        # Looking tickets up by a person's e-mail is a personal-data operation.
+        ctx.require(P.TICKET_READ_PII, "ticket")
+        identity = get_cipher().blind_index("email", f.requester_email)
+        where.append(
+            Ticket.requester_id.in_(select(Contact.id).where(Contact.identity_hash == identity))
+        )
+    base = select(Ticket).where(and_(*where)).order_by(Ticket.created_at.desc(), Ticket.id.desc())
+
+    if f.q:
+        needle = f.q.casefold().strip()
+        pii = ctx.can(P.TICKET_READ_PII)
+        window = (await ctx.session.scalars(base.limit(SEARCH_WINDOW))).unique().all()
+        matches = [
+            t
+            for t in window
+            if needle in (t.subject if pii else redact(t.subject)).casefold()
+            or needle == ticket_key(ctx, t.id).casefold()
+            or needle == str(t.id)
+        ]
+        total = len(matches)
+        rows = matches[offset : offset + limit]
+    else:
+        total = (
+            await ctx.session.scalar(select(func.count()).select_from(Ticket).where(and_(*where)))
+        ) or 0
+        rows = list((await ctx.session.scalars(base.limit(limit).offset(offset))).unique().all())
+
+    names = await _user_names(ctx, {t.assignee_id for t in rows if t.assignee_id})
+    ctx.audit(
+        "ticket.list",
+        "ticket",
+        count=len(rows),
+        searched=bool(f.q),
+        by_requester=bool(f.requester_email),
+    )
+    return TicketPage(
+        items=[_present(ctx, t, names) for t in rows], total=total, limit=limit, offset=offset
+    )
+
+
+async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
+    ticket = await load_ticket(ctx, ticket_id)
+    pii = ctx.can(P.TICKET_READ_PII)
+    messages = (
+        await ctx.session.scalars(
+            select(Message).where(Message.ticket_id == ticket.id).order_by(Message.created_at)
+        )
+    ).all()
+    names = await _user_names(ctx, {m.author_user_id for m in messages if m.author_user_id})
+    out: list[MessageOut] = []
+    for m in messages:
+        if m.author_contact_id is not None:
+            author_type, author = "requester", "Requester"
+            if pii and ticket.requester and ticket.requester.id == m.author_contact_id:
+                author = ticket.requester.display_name or ticket.requester.email or "Requester"
+        elif m.author_user_id and not m.author_user_id.startswith("system:"):
+            author_type, author = "staff", names.get(m.author_user_id, "Staff")
+        else:
+            author_type, author = "system", "Zentral"
+        out.append(
+            MessageOut(
+                id=m.id,
+                kind=m.kind,
+                body=m.body if pii else redact(m.body),
+                author_name=author,
+                author_type=author_type,  # type: ignore[arg-type]
+                delivery_status=m.delivery_status,
+                created_at=m.created_at,
+            )
+        )
+    ctx.audit("ticket.messages.read", "ticket", ticket.id, count=len(out), pii=pii)
+    return out
+
+
+# --- commands ---------------------------------------------------------------------
+
+
+def _check_category(ctx: Ctx, category: str | None) -> None:
+    if category is not None and category not in ctx.settings.categories:
+        raise ValidationFailed(f"unknown category '{category}'")
+
+
+async def _check_team(ctx: Ctx, team_id: uuid.UUID | None) -> None:
+    if team_id is not None and await ctx.session.get(Team, team_id) is None:
+        raise ValidationFailed("unknown team")
+
+
+async def get_or_create_contact(
+    ctx: Ctx, kind: str, identifier: str, *, email: str | None, name: str | None
+) -> Contact:
+    identity = get_cipher().blind_index(kind, identifier)
+    contact = await ctx.session.scalar(select(Contact).where(Contact.identity_hash == identity))
+    if contact is None:
+        contact = Contact(identity_hash=identity, email=email, display_name=name or None)
+        ctx.session.add(contact)
+        await ctx.session.flush()
+        ctx.audit("contact.created", "contact", contact.id)
+    elif name and not contact.display_name:
+        contact.display_name = name
+    return contact
+
+
+async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
+    ctx.require(P.TICKET_CREATE, "ticket")
+    _check_category(ctx, data.category)
+    await _check_team(ctx, data.team_id)
+    if data.team_id and not (ctx.can(P.TICKET_READ_ALL) or data.team_id in ctx.team_ids):
+        ctx.require(P.TICKET_ASSIGN, "ticket")
+    requester = None
+    if data.requester_email:
+        ctx.require(P.TICKET_READ_PII, "ticket")
+        requester = await get_or_create_contact(
+            ctx, "email", data.requester_email, email=data.requester_email, name=data.requester_name
+        )
+    ticket = Ticket(
+        subject=data.subject,
+        status=TicketStatus.NEW,
+        priority=data.priority,
+        category=data.category,
+        tags=sorted(set(data.tags)),
+        channel="manual" if ctx.meta.channel == "api" else ctx.meta.channel,
+        team_id=data.team_id,
+        requester_id=requester.id if requester else None,
+    )
+    ticket.requester = requester
+    ctx.session.add(ticket)
+    await ctx.session.flush()
+    ctx.session.add(
+        Message(
+            ticket_id=ticket.id,
+            kind=MessageKind.NOTE if requester is None else MessageKind.INBOUND,
+            body=data.body,
+            author_user_id=ctx.principal.subject if requester is None else None,
+            author_contact_id=requester.id if requester else None,
+        )
+    )
+    ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
+    ctx.audit("ticket.created", "ticket", ticket.id, channel=ticket.channel)
+    await ctx.session.refresh(ticket, ["team"])
+    return await present_ticket(ctx, ticket)
+
+
+async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> TicketOut:
+    ticket = await load_ticket(ctx, ticket_id)
+    fields = patch.model_fields_set
+    changed: dict[str, Any] = {}
+
+    if fields & {"status", "priority", "category", "tags"}:
+        ctx.require(P.TICKET_UPDATE, "ticket", str(ticket_id))
+    if "team_id" in fields and not ctx.can(P.TICKET_ASSIGN):
+        # Routing to a team is allowed with ticket:update; picking a person is not.
+        ctx.require(P.TICKET_UPDATE, "ticket", str(ticket_id))
+    if "assignee_id" in fields:
+        ctx.require(P.TICKET_ASSIGN, "ticket", str(ticket_id))
+
+    if "status" in fields and patch.status is not None and patch.status != ticket.status:
+        changed["status"] = [ticket.status, patch.status.value]
+        ticket.status = patch.status
+        if patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+            ticket.resolved_at = ticket.resolved_at or utcnow()
+        else:
+            ticket.resolved_at = None
+    if "priority" in fields and patch.priority is not None and patch.priority != ticket.priority:
+        changed["priority"] = [ticket.priority, patch.priority.value]
+        ticket.priority = patch.priority
+    if "category" in fields and patch.category != ticket.category:
+        _check_category(ctx, patch.category)
+        changed["category"] = [ticket.category, patch.category]
+        ticket.category = patch.category
+    if "tags" in fields and patch.tags is not None:
+        tags = sorted(set(patch.tags))
+        if tags != ticket.tags:
+            changed["tags"] = True
+            ticket.tags = tags
+    if "team_id" in fields and patch.team_id != ticket.team_id:
+        await _check_team(ctx, patch.team_id)
+        changed["team_id"] = [str(ticket.team_id or ""), str(patch.team_id or "")]
+        ticket.team_id = patch.team_id
+    if "assignee_id" in fields and patch.assignee_id != ticket.assignee_id:
+        if patch.assignee_id is not None:
+            user = await ctx.session.get(User, patch.assignee_id)
+            if user is None or user.kind != "user":
+                raise ValidationFailed("unknown assignee")
+        changed["assignee_id"] = [ticket.assignee_id or "", patch.assignee_id or ""]
+        ticket.assignee_id = patch.assignee_id
+        if ticket.status == TicketStatus.NEW and patch.assignee_id:
+            ticket.status = TicketStatus.OPEN
+
+    if changed:
+        ticket.updated_at = utcnow()
+        ctx.audit("ticket.updated", "ticket", ticket.id, changes=changed)
+        await ctx.session.flush()
+        await ctx.session.refresh(ticket, ["team"])
+    return await present_ticket(ctx, ticket)
+
+
+async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageOut:
+    ticket = await load_ticket(ctx, ticket_id)
+    if ticket.scrubbed_at is not None:
+        raise ValidationFailed("ticket has been scrubbed under the retention policy")
+    outbound = data.kind == "outbound"
+    ctx.require(P.TICKET_REPLY if outbound else P.TICKET_NOTE, "ticket", str(ticket_id))
+    delivery = DeliveryStatus.NOT_APPLICABLE
+    if outbound:
+        if ticket.requester_id is None:
+            raise ValidationFailed("ticket has no requester to reply to")
+        delivery = DeliveryStatus.PENDING if ticket.source_id else DeliveryStatus.NOT_APPLICABLE
+    message = Message(
+        ticket_id=ticket.id,
+        kind=MessageKind.OUTBOUND if outbound else MessageKind.NOTE,
+        body=data.body,
+        author_user_id=ctx.principal.subject,
+        delivery_status=delivery,
+    )
+    ctx.session.add(message)
+    await ctx.session.flush()
+    if delivery == DeliveryStatus.PENDING:
+        ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
+    if outbound and ticket.status == TicketStatus.NEW:
+        ticket.status = TicketStatus.OPEN
+    ticket.updated_at = utcnow()
+    ctx.audit(
+        "ticket.replied" if outbound else "ticket.note_added",
+        "ticket",
+        ticket.id,
+        message_id=str(message.id),
+    )
+    return MessageOut(
+        id=message.id,
+        kind=message.kind,
+        body=message.body,
+        author_name=ctx.principal.display_name or "Staff",
+        author_type="staff",
+        delivery_status=message.delivery_status,
+        created_at=message.created_at,
+    )

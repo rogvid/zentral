@@ -158,7 +158,7 @@ async def create_source(ctx: Ctx, registry: ConnectorRegistry, data: SourceIn) -
     ctx.require(P.SOURCE_MANAGE, "source")
     config = _validate_source(registry, data.connector, data.config, data.secrets)
     klass = registry.get(data.connector)
-    assert klass is not None  # noqa: S101 - established by _validate_source
+    assert klass is not None
     token, token_hash = new_ingest_token() if klass.uses_ingest_token else (None, None)
     source = IngestSource(
         name=data.name,
@@ -175,9 +175,7 @@ async def create_source(ctx: Ctx, registry: ConnectorRegistry, data: SourceIn) -
     except IntegrityError as exc:
         raise Conflict("a source with this name already exists") from exc
     ctx.audit("source.created", "source", source.id, connector=source.connector)
-    return SourceCreated(
-        **_source_out(ctx, source, registry).model_dump(), ingest_token=token
-    )
+    return SourceCreated(**_source_out(ctx, source, registry).model_dump(), ingest_token=token)
 
 
 async def _load_source(ctx: Ctx, source_id: uuid.UUID) -> IngestSource:

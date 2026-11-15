@@ -133,7 +133,7 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         key=ticket_key(ctx, ticket.id),
         subject=ticket.subject if pii else redact(ticket.subject),
         status=TicketStatus(ticket.status),
-        priority=ticket.priority,  # type: ignore[arg-type]
+        priority=ticket.priority,
         category=ticket.category,
         tags=list(ticket.tags or []),
         channel=ticket.channel,
@@ -250,7 +250,7 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
                 kind=m.kind,
                 body=m.body if pii else redact(m.body),
                 author_name=author,
-                author_type=author_type,  # type: ignore[arg-type]
+                author_type=author_type,
                 delivery_status=m.delivery_status,
                 created_at=m.created_at,
             )

@@ -48,13 +48,19 @@ async def apply_rules(ctx: Ctx, ticket: Ticket) -> list[str]:
             continue
         actions = RuleActions.model_validate(rule.actions)
         changes: dict[str, Any] = {}
-        if actions.set_team_id and await ctx.session.get(Team, actions.set_team_id):
+        if (
+            actions.set_team_id is not None
+            and await ctx.session.get(Team, actions.set_team_id) is not None
+        ):
             ticket.team_id = actions.set_team_id
             changes["team_id"] = str(actions.set_team_id)
         if actions.set_priority:
             ticket.priority = actions.set_priority
             changes["priority"] = actions.set_priority.value
-        if actions.set_assignee_id and await ctx.session.get(User, actions.set_assignee_id):
+        if (
+            actions.set_assignee_id is not None
+            and await ctx.session.get(User, actions.set_assignee_id) is not None
+        ):
             ticket.assignee_id = actions.set_assignee_id
             changes["assignee_id"] = actions.set_assignee_id
         if actions.add_tags:

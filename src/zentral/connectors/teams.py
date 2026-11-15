@@ -34,9 +34,7 @@ from zentral.text import html_to_text, single_line
 
 class TeamsConnector(Connector):
     name: ClassVar[str] = "teams"
-    capabilities: ClassVar[frozenset[Capability]] = frozenset(
-        {Capability.WEBHOOK, Capability.SEND}
-    )
+    capabilities: ClassVar[frozenset[Capability]] = frozenset({Capability.WEBHOOK, Capability.SEND})
     secret_fields: ClassVar[frozenset[str]] = frozenset({"hmac_secret", "reply_webhook_url"})
     required_secrets: ClassVar[frozenset[str]] = frozenset({"hmac_secret"})
 

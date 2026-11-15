@@ -10,11 +10,20 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from zentral.db.models import TicketPriority, TicketStatus
 
 Short = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+# Deliberately permissive: service desks receive mail from internal domains
+# (.local, .corp, .internal) that strict validators reject. The address is only
+# ever used as an identifier and as a Graph API recipient, never in a shell or header.
+Email = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, max_length=320, pattern=r"^[^@\s<>\"',;]{1,64}@[^@\s<>\"',;]{1,255}$"
+    ),
+]
 Body = Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
 Tag = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40, pattern=r"^[\w.-]+$")
@@ -82,7 +91,7 @@ class MessageOut(Out):
 class TicketCreate(In):
     subject: Short
     body: Body
-    requester_email: EmailStr | None = None
+    requester_email: Email | None = None
     requester_name: Annotated[str, StringConstraints(max_length=200)] | None = None
     priority: TicketPriority = TicketPriority.NORMAL
     category: str | None = Field(default=None, max_length=64)
@@ -230,7 +239,7 @@ class AuditVerifyOut(Out):
 
 
 class ContactLookup(In):
-    email: EmailStr
+    email: Email
 
 
 class ContactOut(Out):

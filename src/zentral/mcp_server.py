@@ -89,8 +89,8 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         instructions=INSTRUCTIONS,
         token_verifier=_Verifier(validator),
         auth=AuthSettings(
-            issuer_url=issuer,  # type: ignore[arg-type]
-            resource_server_url=f"{base}/mcp",  # type: ignore[arg-type]
+            issuer_url=issuer,
+            resource_server_url=f"{base}/mcp",
             # The verifier validates the audience itself (Entra does not use RFC 8707).
             validate_token_resource=False,
         ),
@@ -120,9 +120,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                 await ctx.commit()
             except PermissionDenied as exc:
                 await session.rollback()
-                await record_denied(
-                    runtime.sessions, runtime.trail, settings, principal, meta, exc
-                )
+                await record_denied(runtime.sessions, runtime.trail, settings, principal, meta, exc)
                 if exc.permission == "ticket:scope":
                     raise ToolError("Ticket not found.") from None
                 raise ToolError(
@@ -200,7 +198,10 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         """Open a new ticket on behalf of the service desk (no external requester)."""
         async with tool_ctx() as ctx:
             data = TicketCreate(
-                subject=subject, body=body, priority=priority, category=category,  # type: ignore[arg-type]
+                subject=subject,
+                body=body,
+                priority=priority,
+                category=category,
                 team_id=uuid.UUID(team_id) if team_id else None,
             )
             return (await tickets.create_ticket(ctx, data)).model_dump(mode="json")
@@ -220,8 +221,12 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
             supplied = {
                 k: v
                 for k, v in {
-                    "status": status, "priority": priority, "category": category,
-                    "tags": tags, "team_id": team_id, "assignee_id": assignee_id,
+                    "status": status,
+                    "priority": priority,
+                    "category": category,
+                    "tags": tags,
+                    "team_id": team_id,
+                    "assignee_id": assignee_id,
                 }.items()
                 if v is not None
             }
@@ -232,7 +237,9 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
     async def add_note(ticket_id: int, body: str) -> dict[str, Any]:
         """Add an internal note to a ticket. Notes are never sent to the requester."""
         async with tool_ctx() as ctx:
-            message = await tickets.add_message(ctx, ticket_id, MessageCreate(kind="note", body=body))
+            message = await tickets.add_message(
+                ctx, ticket_id, MessageCreate(kind="note", body=body)
+            )
             return message.model_dump(mode="json")
 
     @mcp.tool()
@@ -248,9 +255,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
     async def list_teams() -> list[dict[str, Any]]:
         """List teams (queues) tickets can be routed to."""
         async with tool_ctx() as ctx:
-            return [
-                {"id": str(t.id), "name": t.name} for t in await admin.list_teams(ctx)
-            ]
+            return [{"id": str(t.id), "name": t.name} for t in await admin.list_teams(ctx)]
 
     @mcp.tool()
     async def list_categories() -> list[str]:

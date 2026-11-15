@@ -56,7 +56,9 @@ class HardeningMiddleware:
         is_api = path.startswith(("/api/", "/mcp"))
 
         declared = dict(scope["headers"]).get(b"content-length")
-        too_large = declared is not None and declared.isdigit() and int(declared) > self.max_body_bytes
+        too_large = (
+            declared is not None and declared.isdigit() and int(declared) > self.max_body_bytes
+        )
 
         async def limited_receive() -> Message:
             nonlocal received
@@ -88,7 +90,9 @@ class HardeningMiddleware:
                     "headers": [(b"content-type", b"application/json")],
                 }
             )
-            await send({"type": "http.response.body", "body": b'{"detail":"request body too large"}'})
+            await send(
+                {"type": "http.response.body", "body": b'{"detail":"request body too large"}'}
+            )
 
         try:
             if too_large:
@@ -108,3 +112,18 @@ class HardeningMiddleware:
                 duration_ms=round((time.perf_counter() - started) * 1000, 1),
             )
             structlog.contextvars.clear_contextvars()
+
+
+class McpPathMiddleware:
+    """Serve the MCP endpoint at ``/mcp`` without a trailing-slash redirect.
+
+    Some MCP clients do not replay the ``Authorization`` header after a redirect.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"] == "/mcp":
+            scope = {**scope, "path": "/mcp/", "raw_path": b"/mcp/"}
+        await self.app(scope, receive, send)

@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 import httpx
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from zentral.connectors.base import (
     Capability,
@@ -29,6 +29,7 @@ from zentral.connectors.base import (
     OutboundMessage,
     PollResult,
 )
+from zentral.schemas import Email
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
@@ -42,7 +43,7 @@ _token_cache: dict[tuple[str, str], tuple[str, float]] = {}
 class GraphMailConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mailbox: EmailStr
+    mailbox: Email
     folder: str = Field(default="inbox", pattern=r"^[A-Za-z0-9_-]{1,120}$")
     page_size: int = Field(default=25, ge=1, le=50)
 
@@ -79,7 +80,10 @@ class GraphMailConnector(Connector):
             raise ConnectorError(f"token endpoint returned {resp.status_code}")
         body = resp.json()
         token = str(body["access_token"])
-        _token_cache[key] = (token, time.monotonic() + max(60, int(body.get("expires_in", 300)) - 60))
+        _token_cache[key] = (
+            token,
+            time.monotonic() + max(60, int(body.get("expires_in", 300)) - 60),
+        )
         return token
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:

@@ -14,15 +14,41 @@ from zentral.ai.base import AIProvider, Classification, ClassificationInput, Pri
 
 _KEYWORDS: dict[str, tuple[str, ...]] = {
     "security": ("phishing", "malware", "virus", "ransomware", "breach", "hacked", "suspicious"),
-    "access": ("password", "login", "log in", "sign in", "locked out", "mfa", "permission", "access"),
+    "access": (
+        "password",
+        "login",
+        "log in",
+        "sign in",
+        "locked out",
+        "mfa",
+        "permission",
+        "access",
+    ),
     "network": ("vpn", "wifi", "wi-fi", "network", "internet", "dns", "firewall"),
-    "hardware": ("laptop", "monitor", "keyboard", "mouse", "printer", "docking", "battery", "screen"),
+    "hardware": (
+        "laptop",
+        "monitor",
+        "keyboard",
+        "mouse",
+        "printer",
+        "docking",
+        "battery",
+        "screen",
+    ),
     "software": ("install", "update", "crash", "license", "excel", "outlook", "teams", "error"),
     "billing": ("invoice", "billing", "payment", "refund"),
     "incident": ("outage", "down", "unavailable", "not responding", "alert", "critical"),
     "service_request": ("request", "new user", "onboarding", "order", "please provide"),
 }
-_URGENT = ("outage", "everyone", "all users", "production down", "ransomware", "breach", "data loss")
+_URGENT = (
+    "outage",
+    "everyone",
+    "all users",
+    "production down",
+    "ransomware",
+    "breach",
+    "data loss",
+)
 _HIGH = ("urgent", "asap", "cannot work", "can't work", "blocked", "locked out", "critical")
 
 

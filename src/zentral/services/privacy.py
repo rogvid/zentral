@@ -46,7 +46,9 @@ async def find_contact(ctx: Ctx, email: str) -> ContactOut:
     identity = get_cipher().blind_index("email", email)
     contact = await ctx.session.scalar(select(Contact).where(Contact.identity_hash == identity))
     # The lookup itself is audited (without the address) whether or not it matched.
-    ctx.audit("privacy.contact_lookup", "contact", contact.id if contact else "", found=bool(contact))
+    ctx.audit(
+        "privacy.contact_lookup", "contact", contact.id if contact else "", found=bool(contact)
+    )
     if contact is None:
         raise NotFound("contact")
     return await _contact_out(ctx, contact)
@@ -156,7 +158,9 @@ async def erase_contact(ctx: Ctx, contact_id: uuid.UUID) -> ErasureOut:
     contact.identity_hash = None
     contact.erased_at = utcnow()
     ctx.audit("privacy.erased", "contact", contact.id, tickets=len(tickets), messages=messages)
-    return ErasureOut(contact_id=contact.id, tickets_scrubbed=len(tickets), messages_scrubbed=messages)
+    return ErasureOut(
+        contact_id=contact.id, tickets_scrubbed=len(tickets), messages_scrubbed=messages
+    )
 
 
 async def retention_sweep(ctx: Ctx, *, batch: int = 200) -> int:

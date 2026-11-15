@@ -44,18 +44,24 @@ class ClaudeCliProvider(AIProvider):
             proc = await asyncio.create_subprocess_exec(
                 executable,
                 "-p",
-                "--model", self.settings.ai_model or DEFAULT_MODEL,
-                "--output-format", "json",
-                "--tools", "",
+                "--model",
+                self.settings.ai_model or DEFAULT_MODEL,
+                "--output-format",
+                "json",
+                "--tools",
+                "",
                 "--no-session-persistence",
-                "--system-prompt", system_prompt(inp.categories),
-                "--json-schema", json.dumps(CLASSIFICATION_SCHEMA),
+                "--system-prompt",
+                system_prompt(inp.categories),
+                "--json-schema",
+                json.dumps(CLASSIFICATION_SCHEMA),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
             stdout, _ = await asyncio.wait_for(
-                proc.communicate(user_prompt(inp).encode()), timeout=self.settings.ai_timeout_seconds
+                proc.communicate(user_prompt(inp).encode()),
+                timeout=self.settings.ai_timeout_seconds,
             )
         except TimeoutError as exc:
             proc.kill()

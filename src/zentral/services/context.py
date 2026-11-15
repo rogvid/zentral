@@ -39,7 +39,9 @@ class Ctx:
     def can(self, permission: Permission) -> bool:
         return self.principal.can(permission)
 
-    def require(self, permission: Permission, resource_type: str = "", resource_id: str = "") -> None:
+    def require(
+        self, permission: Permission, resource_type: str = "", resource_id: str = ""
+    ) -> None:
         if not self.principal.can(permission):
             raise PermissionDenied(permission.value, resource_type, resource_id)
 
@@ -52,9 +54,7 @@ class Ctx:
         outcome: str = "success",
         **details: Any,
     ) -> None:
-        self._events.append(
-            PendingEvent(action, resource_type, str(resource_id), outcome, details)
-        )
+        self._events.append(PendingEvent(action, resource_type, str(resource_id), outcome, details))
 
     async def commit(self) -> None:
         """Commit the transaction together with its audit events."""

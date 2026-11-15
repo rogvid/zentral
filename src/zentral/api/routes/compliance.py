@@ -66,7 +66,9 @@ async def verify_audit_chain(ctx: CtxDep) -> AuditVerifyOut:
     ctx.require(Permission.AUDIT_READ, "audit")
     result = await ctx.trail.verify(ctx.session)
     ctx.audit(
-        "audit.verified", "audit", outcome="success" if result.ok else "failure",
+        "audit.verified",
+        "audit",
+        outcome="success" if result.ok else "failure",
         checked=result.checked,
     )
     await ctx.commit()

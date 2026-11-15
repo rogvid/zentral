@@ -4,11 +4,11 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
-from pydantic import EmailStr
 
 from zentral.api.deps import CtxDep
 from zentral.db.models import TicketPriority, TicketStatus
 from zentral.schemas import (
+    Email,
     MessageCreate,
     MessageOut,
     TicketCreate,
@@ -31,7 +31,7 @@ async def list_tickets(
     team_id: uuid.UUID | None = None,
     assignee_id: Annotated[str | None, Query(max_length=64)] = None,
     unassigned: bool = False,
-    requester_email: EmailStr | None = None,
+    requester_email: Email | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0, le=100_000)] = 0,

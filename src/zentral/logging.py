@@ -22,8 +22,23 @@ import structlog
 from zentral.security.redaction import redact
 
 _SAFE_KEYS = frozenset(
-    {"event", "level", "timestamp", "logger", "request_id", "path", "method", "action",
-     "resource_id", "resource_type", "actor_id", "job_id", "kind", "channel", "outcome"}
+    {
+        "event",
+        "level",
+        "timestamp",
+        "logger",
+        "request_id",
+        "path",
+        "method",
+        "action",
+        "resource_id",
+        "resource_type",
+        "actor_id",
+        "job_id",
+        "kind",
+        "channel",
+        "outcome",
+    }
 )
 
 

@@ -11,7 +11,7 @@ import json
 import uuid
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from zentral.connectors.base import (
     Capability,
@@ -22,6 +22,7 @@ from zentral.connectors.base import (
     WebhookRequest,
     WebhookResult,
 )
+from zentral.schemas import Email
 from zentral.security.crypto import constant_time_equals, hash_token
 
 _SEVERITY_TO_PRIORITY = {
@@ -43,7 +44,7 @@ class WebhookPayload(BaseModel):
     external_id: str | None = Field(default=None, min_length=1, max_length=200)
     thread_key: str | None = Field(default=None, min_length=1, max_length=200)
     severity: Literal["critical", "urgent", "high", "warning", "normal", "info", "low"] = "normal"
-    requester_email: EmailStr | None = None
+    requester_email: Email | None = None
     requester_name: str | None = Field(default=None, max_length=200)
 
 

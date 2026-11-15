@@ -18,7 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from zentral import __version__
 from zentral.api.deps import request_meta
-from zentral.api.middleware import HardeningMiddleware
+from zentral.api.middleware import HardeningMiddleware, McpPathMiddleware
 from zentral.api.ratelimit import RateLimiter
 from zentral.api.routes import admin, compliance, hooks, meta, tickets
 from zentral.config import Settings, get_settings
@@ -81,6 +81,7 @@ def create_app(
     app.state.dev_personas = list(PERSONAS) if dev_issuer else []
 
     # --- middleware (outermost last) ----------------------------------------------
+    app.add_middleware(McpPathMiddleware)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -90,7 +91,9 @@ def create_app(
             allow_credentials=False,
             max_age=600,
         )
-    hosts = sorted({urlsplit(settings.public_base_url).hostname or "", *settings.allowed_hosts} - {""})
+    hosts = sorted(
+        {urlsplit(settings.public_base_url).hostname or "", *settings.allowed_hosts} - {""}
+    )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
     app.add_middleware(
         HardeningMiddleware, max_body_bytes=settings.max_body_bytes, hsts=settings.is_production
@@ -117,7 +120,9 @@ def create_app(
         return {
             "resource": f"{base}/mcp",
             "authorization_servers": [settings.entra_issuer],
-            "scopes_supported": [f"api://{settings.entra_api_client_id}/{settings.entra_required_scope}"],
+            "scopes_supported": [
+                f"api://{settings.entra_api_client_id}/{settings.entra_required_scope}"
+            ],
             "bearer_methods_supported": ["header"],
         }
 

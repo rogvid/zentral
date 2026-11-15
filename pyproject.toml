@@ -20,7 +20,6 @@ dependencies = [
     "structlog>=24.4",
     "mcp>=1.20",
     "typer>=0.15",
-    "email-validator>=2.4.0",
 ]
 
 [project.optional-dependencies]
@@ -77,7 +76,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "C4", "SIM", "RUF", "PT",
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S311"]
+"tests/**" = ["S105", "S106", "S311", "S608", "E501", "PT018", "PT011", "SLF001", "RUF001", "RUF003"]
 "src/zentral/api/**" = ["B008"]
 "src/zentral/cli.py" = ["B008"]
 

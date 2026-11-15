@@ -10,6 +10,7 @@ Delivery is at-least-once; every handler is idempotent.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
@@ -118,7 +119,9 @@ class Worker:
             # Only our own ConnectorError messages are known to be free of content.
             detail = str(exc) if isinstance(exc, ConnectorError) else ""
             error = f"{type(exc).__name__}: {detail}"[:500]
-            log.warning("job_failed", kind=job.kind, job_id=str(job.id), attempt=job.attempts, error=error)
+            log.warning(
+                "job_failed", kind=job.kind, job_id=str(job.id), attempt=job.attempts, error=error
+            )
 
         async with self.rt.sessions() as session:
             ctx = self.rt.system_ctx(session, "worker")
@@ -144,8 +147,11 @@ class Worker:
             if message is not None:
                 message.delivery_status = DeliveryStatus.FAILED
                 ctx.audit(
-                    "message.delivery_failed", "ticket", message.ticket_id,
-                    outcome="failure", message_id=str(message.id),
+                    "message.delivery_failed",
+                    "ticket",
+                    message.ticket_id,
+                    outcome="failure",
+                    message_id=str(message.id),
                 )
 
     # -- scheduling ---------------------------------------------------------------------
@@ -161,13 +167,19 @@ class Worker:
                     )
                 )
             ).all()
-            polling = {str(j.payload.get("source_id")) for j in open_jobs if j.kind == "poll_source"}
+            polling = {
+                str(j.payload.get("source_id")) for j in open_jobs if j.kind == "poll_source"
+            }
             sources = (
                 await session.scalars(select(IngestSource).where(IngestSource.enabled.is_(True)))
             ).all()
             for source in sources:
                 klass = self.rt.registry.get(source.connector)
-                if klass and Capability.POLL in klass.capabilities and str(source.id) not in polling:
+                if (
+                    klass
+                    and Capability.POLL in klass.capabilities
+                    and str(source.id) not in polling
+                ):
                     session.add(Job(kind="poll_source", payload={"source_id": str(source.id)}))
             if not any(j.kind == "retention_sweep" for j in open_jobs):
                 session.add(
@@ -184,10 +196,8 @@ class Worker:
                 await self.schedule()
                 last_schedule = loop.time()
             if await self.run_once() == 0:
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=2)
-                except TimeoutError:
-                    pass
 
     # -- handlers -----------------------------------------------------------------------
 
@@ -232,6 +242,9 @@ class Worker:
         )
         message.delivery_status = DeliveryStatus.SENT
         ctx.audit(
-            "message.delivered", "ticket", ticket.id,
-            message_id=str(message.id), connector=source.connector if source else "",
+            "message.delivered",
+            "ticket",
+            ticket.id,
+            message_id=str(message.id),
+            connector=source.connector if source else "",
         )

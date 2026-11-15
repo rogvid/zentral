@@ -56,15 +56,31 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     # GDPR export/erase permissions (segregation of duties).
     Role.ADMIN: frozenset(
         {
-            P.TICKET_READ, P.TICKET_READ_PII, P.TICKET_READ_ALL, P.TICKET_TRIAGE,
-            P.TICKET_CREATE, P.TICKET_UPDATE, P.TICKET_ASSIGN, P.TICKET_REPLY, P.TICKET_NOTE,
-            P.TEAM_MANAGE, P.SOURCE_MANAGE, P.RULE_MANAGE, P.AUDIT_READ,
+            P.TICKET_READ,
+            P.TICKET_READ_PII,
+            P.TICKET_READ_ALL,
+            P.TICKET_TRIAGE,
+            P.TICKET_CREATE,
+            P.TICKET_UPDATE,
+            P.TICKET_ASSIGN,
+            P.TICKET_REPLY,
+            P.TICKET_NOTE,
+            P.TEAM_MANAGE,
+            P.SOURCE_MANAGE,
+            P.RULE_MANAGE,
+            P.AUDIT_READ,
         }
     ),
     Role.AGENT: frozenset(
         {
-            P.TICKET_READ, P.TICKET_READ_PII, P.TICKET_TRIAGE, P.TICKET_CREATE,
-            P.TICKET_UPDATE, P.TICKET_ASSIGN, P.TICKET_REPLY, P.TICKET_NOTE,
+            P.TICKET_READ,
+            P.TICKET_READ_PII,
+            P.TICKET_TRIAGE,
+            P.TICKET_CREATE,
+            P.TICKET_UPDATE,
+            P.TICKET_ASSIGN,
+            P.TICKET_REPLY,
+            P.TICKET_NOTE,
         }
     ),
     Role.VIEWER: frozenset({P.TICKET_READ}),
@@ -72,8 +88,13 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.AUDITOR: frozenset({P.AUDIT_READ}),
     Role.PRIVACY_OFFICER: frozenset(
         {
-            P.TICKET_READ, P.TICKET_READ_PII, P.TICKET_READ_ALL, P.TICKET_TRIAGE,
-            P.PRIVACY_EXPORT, P.PRIVACY_ERASE, P.AUDIT_READ,
+            P.TICKET_READ,
+            P.TICKET_READ_PII,
+            P.TICKET_READ_ALL,
+            P.TICKET_TRIAGE,
+            P.PRIVACY_EXPORT,
+            P.PRIVACY_ERASE,
+            P.AUDIT_READ,
         }
     ),
     # Reads redacted content, may triage and annotate. Cannot see PII and

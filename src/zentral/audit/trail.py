@@ -95,7 +95,9 @@ class AuditTrail:
         self._local_lock = asyncio.Lock()
 
     def _digest(self, prev_hash: str, event: AuditEvent) -> str:
-        return hmac.new(self._key, prev_hash.encode() + _canonical(event), hashlib.sha256).hexdigest()
+        return hmac.new(
+            self._key, prev_hash.encode() + _canonical(event), hashlib.sha256
+        ).hexdigest()
 
     @asynccontextmanager
     async def serialized(self, session: AsyncSession) -> AsyncIterator[None]:

@@ -72,12 +72,12 @@ def test_key_rotation_and_audit_cli(cli_env, tmp_path):
 
     # Rotate: prepend a new key, re-encrypt, then drop the old key entirely.
     new_key = Fernet.generate_key().decode()
-    cli_env["set"]("ZENTRAL_ENCRYPTION_KEYS", json.dumps([new_key, cli_env["key"]]))
+    cli_env["set"]("ZENTRAL_ENCRYPTION_KEYS", f"{new_key}, {cli_env['key']}")
     get_settings.cache_clear()
     result = runner.invoke(app, ["keys", "rotate"])
     assert result.exit_code == 0 and "re-encrypted 2 values" in result.output
 
-    cli_env["set"]("ZENTRAL_ENCRYPTION_KEYS", json.dumps([new_key]))
+    cli_env["set"]("ZENTRAL_ENCRYPTION_KEYS", new_key)
     get_settings.cache_clear()
 
     async def read():
@@ -108,8 +108,7 @@ def test_key_rotation_and_audit_cli(cli_env, tmp_path):
 def test_generated_keys_are_usable(cli_env):
     out = CliRunner().invoke(app, ["keys", "generate"]).output
     values = dict(line.split("=", 1) for line in out.strip().splitlines())
-    (key,) = json.loads(values["ZENTRAL_ENCRYPTION_KEYS"])
-    Fernet(key.encode())
+    Fernet(values["ZENTRAL_ENCRYPTION_KEYS"].encode())
     assert (
         len(values["ZENTRAL_BLIND_INDEX_KEY"]) >= 32 and len(values["ZENTRAL_AUDIT_HMAC_KEY"]) >= 32
     )

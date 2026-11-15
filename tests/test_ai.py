@@ -320,7 +320,7 @@ async def test_anthropic_provider_maps_failures_to_ai_error():
         ),
         lambda httpx2: httpx2.Response(200, json=anthropic_message("", stop_reason="refusal")),
     ):
-        provider, httpx2 = anthropic_provider(lambda request, r=response: r(__import__("httpx2")))
+        provider, _ = anthropic_provider(lambda request, r=response: r(__import__("httpx2")))
         with pytest.raises(AIError):
             await provider.classify(ClassificationInput("s", "b", CATEGORIES))
 

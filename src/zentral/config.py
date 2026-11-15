@@ -11,11 +11,12 @@ way that would weaken security (fail closed, not open).
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BeforeValidator, Field, SecretStr
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_CATEGORIES = (
     "incident",
@@ -35,6 +36,20 @@ BUILTIN_CONNECTORS = ("webhook", "teams", "email_graph")
 CLOUD_AI_PROVIDERS = frozenset({"anthropic", "claude_cli"})
 
 
+def _split(value: Any) -> Any:
+    """Accept ``a,b,c`` (shell friendly) as well as a JSON array for list settings."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            return json.loads(text)
+        return [item.strip() for item in text.split(",") if item.strip()]
+    return value
+
+
+StrList = Annotated[list[str], NoDecode, BeforeValidator(_split)]
+SecretList = Annotated[list[SecretStr], NoDecode, BeforeValidator(_split)]
+
+
 class ConfigurationError(RuntimeError):
     """Raised when the configuration is unsafe or incomplete."""
 
@@ -47,8 +62,8 @@ class Settings(BaseSettings):
     env: Literal["development", "test", "production"] = "development"
     database_url: str = "sqlite+aiosqlite:///./zentral-dev.db"
     public_base_url: str = "http://localhost:8000"
-    allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
-    cors_origins: list[str] = Field(default_factory=list)
+    allowed_hosts: StrList = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
+    cors_origins: StrList = Field(default_factory=list)
     static_dir: str | None = None
     ticket_prefix: str = "ZEN"
 
@@ -60,11 +75,11 @@ class Settings(BaseSettings):
     entra_authority_host: str = "https://login.microsoftonline.com"
     entra_required_scope: str = "access_as_user"
     # Extra accepted audiences; ``<client-id>`` and ``api://<client-id>`` are always accepted.
-    entra_extra_audiences: list[str] = Field(default_factory=list)
+    entra_extra_audiences: StrList = Field(default_factory=list)
 
     # --- Data protection ----------------------------------------------------
     # Fernet keys, newest first. All are tried for decryption; the first encrypts.
-    encryption_keys: list[SecretStr] = Field(default_factory=list)
+    encryption_keys: SecretList = Field(default_factory=list)
     # Key for blind indexes (deterministic lookup of encrypted identifiers).
     blind_index_key: SecretStr = SecretStr("")
     # Key for the tamper-evident audit chain (HMAC-SHA256).
@@ -82,12 +97,12 @@ class Settings(BaseSettings):
     ai_redact_pii: bool = True
     # Below this confidence the AI result is stored as a suggestion only.
     ai_min_confidence: float = Field(default=0.6, ge=0, le=1)
-    categories: list[str] = Field(default_factory=lambda: list(DEFAULT_CATEGORIES))
+    categories: StrList = Field(default_factory=lambda: list(DEFAULT_CATEGORIES))
 
     # --- Connectors ---------------------------------------------------------
-    enabled_connectors: list[str] = Field(default_factory=lambda: list(BUILTIN_CONNECTORS))
+    enabled_connectors: StrList = Field(default_factory=lambda: list(BUILTIN_CONNECTORS))
     # Hosts connectors may call. Suffix match on a dot boundary.
-    outbound_host_allowlist: list[str] = Field(
+    outbound_host_allowlist: StrList = Field(
         default_factory=lambda: [
             "graph.microsoft.com",
             "login.microsoftonline.com",

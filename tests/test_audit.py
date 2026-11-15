@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import delete, select, update
 
-from tests.conftest import make_settings
+from tests.conftest import IS_POSTGRES, make_settings
 from tests.helpers import audit_events, make_ticket
 from zentral.audit.trail import AuditTrail
 from zentral.db.models import AuditEvent
@@ -27,28 +28,32 @@ async def test_chain_verifies_and_is_contiguous(client, auth, db):
     assert seqs == list(range(1, len(seqs) + 1))
 
 
-async def test_modified_event_is_detected(client, auth, db):
+async def test_modified_event_is_detected(client, auth, as_db_superuser):
+    db = as_db_superuser
     await seed(client, auth)
     await db.execute(update(AuditEvent).where(AuditEvent.seq == 2).values(actor_id="someone-else"))
     await db.commit()
     assert await verify(client, auth) == {"ok": False, "checked": 1, "first_bad_seq": 2}
 
 
-async def test_modified_details_are_detected(client, auth, db):
+async def test_modified_details_are_detected(client, auth, as_db_superuser):
+    db = as_db_superuser
     await seed(client, auth)
     await db.execute(update(AuditEvent).where(AuditEvent.seq == 3).values(details={"forged": True}))
     await db.commit()
     assert (await verify(client, auth))["first_bad_seq"] == 3
 
 
-async def test_deleted_event_is_detected(client, auth, db):
+async def test_deleted_event_is_detected(client, auth, as_db_superuser):
+    db = as_db_superuser
     await seed(client, auth)
     await db.execute(delete(AuditEvent).where(AuditEvent.seq == 2))
     await db.commit()
     assert (await verify(client, auth))["first_bad_seq"] == 2
 
 
-async def test_truncated_tail_then_rewrite_needs_the_key(client, auth, db, runtime):
+async def test_truncated_tail_then_rewrite_needs_the_key(client, auth, as_db_superuser, runtime):
+    db = as_db_superuser
     """An attacker with DB access but without the HMAC key cannot re-chain events."""
     await seed(client, auth)
     forger = AuditTrail("attacker-does-not-know-the-real-key")
@@ -99,3 +104,23 @@ async def test_action_and_audit_commit_atomically(client, auth, db, runtime, mon
     from zentral.db.models import Ticket
 
     assert (await db.scalars(select(Ticket))).all() == []
+
+
+@pytest.mark.skipif(not IS_POSTGRES, reason="database-level guard exists on PostgreSQL only")
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE audit_events SET actor_id = 'x' WHERE seq = 1",
+        "DELETE FROM audit_events WHERE seq = 1",
+        "TRUNCATE audit_events",
+    ],
+)
+async def test_database_refuses_to_rewrite_history(client, auth, db, statement):
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+
+    await seed(client, auth, 1)
+    with pytest.raises(DBAPIError, match="append-only"):
+        await db.execute(text(statement))
+    await db.rollback()
+    assert (await verify(client, auth))["ok"] is True

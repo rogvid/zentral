@@ -104,7 +104,7 @@ def keys_generate() -> None:
     """Print a fresh set of keys as environment variables. Store them in a secret manager."""
     from zentral.security.crypto import generate_key
 
-    typer.echo(f'ZENTRAL_ENCRYPTION_KEYS=["{generate_key()}"]')
+    typer.echo(f"ZENTRAL_ENCRYPTION_KEYS={generate_key()}")
     typer.echo(f"ZENTRAL_BLIND_INDEX_KEY={secrets.token_urlsafe(48)}")
     typer.echo(f"ZENTRAL_AUDIT_HMAC_KEY={secrets.token_urlsafe(48)}")
 

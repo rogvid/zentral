@@ -172,7 +172,7 @@ def create_app(
     if static_dir and (static_dir / "index.html").is_file():
         root = static_dir.resolve()
 
-        @app.get("/{path:path}", include_in_schema=False)
+        @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa(path: str) -> FileResponse:
             if path.startswith(("api/", "mcp", ".well-known/")):
                 raise HTTPException(404)

@@ -149,6 +149,18 @@ def test_unsafe_production_config_is_refused(overrides):
         prod(**overrides).validate_for_runtime()
 
 
+def test_list_settings_accept_csv_and_json(monkeypatch):
+    from zentral.config import Settings
+
+    monkeypatch.setenv("ZENTRAL_CORS_ORIGINS", "https://a.example, https://b.example")
+    monkeypatch.setenv("ZENTRAL_CATEGORIES", '["x", "y"]')
+    monkeypatch.setenv("ZENTRAL_ENCRYPTION_KEYS", "k1,k2")
+    s = Settings(_env_file=None)
+    assert s.cors_origins == ["https://a.example", "https://b.example"]
+    assert s.categories == ["x", "y"]
+    assert [k.get_secret_value() for k in s.encryption_keys] == ["k1", "k2"]
+
+
 def test_secrets_do_not_leak_through_repr():
     key = Fernet.generate_key().decode()
     settings = make_settings(encryption_keys=[key], ai_api_key="sk-very-secret")

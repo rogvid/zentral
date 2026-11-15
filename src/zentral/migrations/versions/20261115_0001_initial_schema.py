@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 import zentral.db.types
+from zentral.db import audit_guard
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -189,43 +190,16 @@ def upgrade() -> None:
 
 
 def _protect_audit_trail() -> None:
-    """Make the audit table append-only at the database level (PostgreSQL).
-
-    Defence in depth on top of the hash chain: even the application's own
-    database role cannot rewrite history. TRUNCATE is blocked as well.
-    """
-    if op.get_bind().dialect.name != "postgresql":
-        return
-    op.execute(
-        """
-        CREATE FUNCTION zentral_audit_immutable() RETURNS trigger AS $$
-        BEGIN
-            RAISE EXCEPTION 'audit_events is append-only';
-        END;
-        $$ LANGUAGE plpgsql
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER audit_events_no_update_delete
-        BEFORE UPDATE OR DELETE ON audit_events
-        FOR EACH ROW EXECUTE FUNCTION zentral_audit_immutable()
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER audit_events_no_truncate
-        BEFORE TRUNCATE ON audit_events
-        FOR EACH STATEMENT EXECUTE FUNCTION zentral_audit_immutable()
-        """
-    )
+    """Make the audit table append-only at the database level (PostgreSQL only)."""
+    if op.get_bind().dialect.name == "postgresql":
+        for statement in audit_guard.INSTALL:
+            op.execute(statement)
 
 
 def downgrade() -> None:
     if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP TRIGGER IF EXISTS audit_events_no_truncate ON audit_events")
-        op.execute("DROP TRIGGER IF EXISTS audit_events_no_update_delete ON audit_events")
-        op.execute("DROP FUNCTION IF EXISTS zentral_audit_immutable()")
+        for statement in audit_guard.REMOVE:
+            op.execute(statement)
     op.drop_index(op.f("ix_messages_ticket_id"), table_name="messages")
     op.drop_index(op.f("ix_messages_author_contact_id"), table_name="messages")
     op.drop_table("messages")

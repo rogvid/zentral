@@ -1,0 +1,252 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { useApp, useLoad } from "../context";
+import { query, relativeTime, titleCase } from "../lib";
+import type { Priority, Team, TicketPage } from "../types";
+import { Chip, Dialog, Empty, ErrorState, Field, PageHead, PriorityMark, Spinner, StatusBadge } from "../ui";
+
+type View = "active" | "mine" | "unassigned" | "all";
+const VIEWS: { id: View; label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "mine", label: "Assigned to me" },
+  { id: "unassigned", label: "Unassigned" },
+  { id: "all", label: "All" },
+];
+const PAGE_SIZE = 25;
+const ACTIVE = "&status=new&status=open&status=pending";
+
+function NewTicket({ teams, onClose, onCreated }: { teams: Team[]; onClose: () => void; onCreated: (id: number) => void }) {
+  const { api, config, can, notify } = useApp();
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const text = (name: string) => String(form.get(name) ?? "").trim();
+    setBusy(true);
+    try {
+      const ticket = await api.post<{ id: number }>("/tickets", {
+        subject: text("subject"),
+        body: text("body"),
+        priority: text("priority"),
+        category: text("category") || null,
+        team_id: text("team_id") || null,
+        requester_email: text("requester_email") || null,
+        requester_name: text("requester_name") || null,
+      });
+      onCreated(ticket.id);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Could not create the ticket", "error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog title="New ticket" onClose={onClose}>
+      <form className="form" onSubmit={(e) => void submit(e)}>
+        <Field label="Subject">
+          <input name="subject" required maxLength={200} autoFocus />
+        </Field>
+        <Field label="Description">
+          <textarea name="body" required rows={5} maxLength={100000} />
+        </Field>
+        {can("ticket:read_pii") && (
+          <div className="form-row">
+            <Field label="Requester e-mail" hint="Optional. Leave empty for internal tickets.">
+              <input name="requester_email" type="email" maxLength={320} />
+            </Field>
+            <Field label="Requester name">
+              <input name="requester_name" maxLength={200} />
+            </Field>
+          </div>
+        )}
+        <div className="form-row">
+          <Field label="Priority">
+            <select name="priority" defaultValue="normal">
+              {(["low", "normal", "high", "urgent"] satisfies Priority[]).map((p) => (
+                <option key={p} value={p}>
+                  {titleCase(p)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Category" hint="Leave empty to let AI suggest one.">
+            <select name="category" defaultValue="">
+              <option value="">Auto</option>
+              {config.categories.map((c) => (
+                <option key={c} value={c}>
+                  {titleCase(c)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Team">
+            <select name="team_id" defaultValue="">
+              <option value="">Triage</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <footer className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" disabled={busy}>
+            Create ticket
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+  );
+}
+
+export function InboxPage() {
+  const { api, me, can } = useApp();
+  const [view, setView] = useState<View>("active");
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTerm(search.trim());
+      setOffset(0);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const teams = useLoad(() => api.get<Team[]>("/teams"), []);
+  const page = useLoad(() => {
+    const base = query({
+      q: term,
+      limit: PAGE_SIZE,
+      offset,
+      assignee_id: view === "mine" ? me.subject : undefined,
+      unassigned: view === "unassigned",
+    });
+    return api.get<TicketPage>(`/tickets${base}${view === "all" ? "" : ACTIVE}`);
+  }, [view, term, offset]);
+
+  const data = page.data;
+  return (
+    <>
+      <PageHead
+        title="Inbox"
+        sub={data ? `${data.total} ticket${data.total === 1 ? "" : "s"}` : undefined}
+        actions={
+          can("ticket:create") && (
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              New ticket
+            </button>
+          )
+        }
+      />
+      <div className="toolbar">
+        <div className="tabs" role="tablist">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              role="tab"
+              aria-selected={view === v.id}
+              className={`tab${view === v.id ? " tab-active" : ""}`}
+              onClick={() => {
+                setView(v.id);
+                setOffset(0);
+              }}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <input
+          className="search"
+          type="search"
+          placeholder="Search subject or ticket key"
+          aria-label="Search tickets"
+          value={search}
+          maxLength={200}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {page.error ? (
+        <ErrorState message={page.error} retry={page.reload} />
+      ) : !data ? (
+        <Spinner />
+      ) : data.items.length === 0 ? (
+        <Empty title="Nothing here" hint={term ? "No ticket matches your search." : "You are all caught up."} />
+      ) : (
+        <div className={`card table-card${page.loading ? " is-loading" : ""}`}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Ticket</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Category</th>
+                <th>Team</th>
+                <th>Assignee</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((t) => (
+                <tr key={t.id} onClick={() => (window.location.hash = `#/tickets/${t.id}`)}>
+                  <td className="cell-main">
+                    <a href={`#/tickets/${t.id}`} onClick={(e) => e.stopPropagation()}>
+                      <span className="ticket-key">{t.key}</span>
+                      <span className="ticket-subject">{t.subject}</span>
+                    </a>
+                    <span className="cell-sub">
+                      {t.requester ? t.requester.display_name : "Internal"} · via {titleCase(t.channel)}
+                    </span>
+                  </td>
+                  <td>
+                    <StatusBadge status={t.status} />
+                  </td>
+                  <td>
+                    <PriorityMark priority={t.priority} />
+                  </td>
+                  <td>
+                    {t.category ? (
+                      <Chip>{titleCase(t.category)}</Chip>
+                    ) : t.ai_category ? (
+                      <Chip tone="ai">{titleCase(t.ai_category)}?</Chip>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
+                  </td>
+                  <td>{t.team_name ?? <span className="muted">Triage</span>}</td>
+                  <td>{t.assignee_name ?? <span className="muted">Unassigned</span>}</td>
+                  <td className="muted nowrap">{relativeTime(t.updated_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <footer className="pager">
+            <span className="muted">
+              {offset + 1}–{offset + data.items.length} of {data.total}
+            </span>
+            <button className="btn" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+              Previous
+            </button>
+            <button className="btn" disabled={offset + PAGE_SIZE >= data.total} onClick={() => setOffset(offset + PAGE_SIZE)}>
+              Next
+            </button>
+          </footer>
+        </div>
+      )}
+      {creating && (
+        <NewTicket
+          teams={teams.data ?? []}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => (window.location.hash = `#/tickets/${id}`)}
+        />
+      )}
+    </>
+  );
+}

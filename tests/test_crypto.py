@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from tests.helpers import make_source, make_ticket
 from zentral.security.crypto import CryptoError, FieldCipher, hash_token, new_ingest_token
@@ -68,10 +68,8 @@ async def test_no_plaintext_personal_data_in_database(client, auth, runtime, wor
 
     dump = []
     async with runtime.engine.connect() as conn:
-        tables = (
-            await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
-        ).scalars()
-        for table in tables.all():
+        tables = await conn.run_sync(lambda sync: inspect(sync).get_table_names())
+        for table in tables:
             rows = (await conn.execute(text(f'SELECT * FROM "{table}"'))).all()
             dump.append(str(rows))
     haystack = "\n".join(dump)

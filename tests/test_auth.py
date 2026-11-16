@@ -13,8 +13,8 @@ import jwt
 import pytest
 
 from zentral.security.devauth import LocalIssuer
-from zentral.security.entra import AuthenticationError, JwksKeySource
 from zentral.security.rbac import Role
+from zentral.security.tokens import AuthenticationError, JwksKeySource
 
 
 @pytest.fixture
@@ -140,7 +140,7 @@ async def test_jwks_refresh_is_throttled():
         return httpx.Response(200, json=issuer.jwks())
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        source = JwksKeySource("https://idp.test/keys", http)
+        source = JwksKeySource(http, jwks_uri="https://idp.test/keys")
         assert await source.get_key(issuer.kid) is not None
         for i in range(20):
             assert await source.get_key(f"forged-{i}") is None
@@ -152,4 +152,4 @@ async def test_jwks_failure_fails_closed():
         return httpx.Response(503)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        assert await JwksKeySource("https://idp.test/keys", http).get_key("any") is None
+        assert await JwksKeySource(http, jwks_uri="https://idp.test/keys").get_key("any") is None

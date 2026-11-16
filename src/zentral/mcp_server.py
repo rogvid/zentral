@@ -34,8 +34,8 @@ from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
 from zentral.runtime import Runtime
 from zentral.schemas import MessageCreate, TicketCreate, TicketUpdate
-from zentral.security.entra import AuthenticationError, TokenValidator
 from zentral.security.principal import Principal
+from zentral.security.tokens import AuthenticationError, Authenticator
 from zentral.services import admin, tickets
 from zentral.services.context import Ctx, record_denied, resolve_team_ids, touch_user
 from zentral.services.errors import DomainError, NotFound, PermissionDenied
@@ -61,7 +61,7 @@ Important:
 
 
 class _Verifier(TokenVerifier):
-    def __init__(self, validator: TokenValidator) -> None:
+    def __init__(self, validator: Authenticator) -> None:
         self._validator = validator
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -79,17 +79,16 @@ class _Verifier(TokenVerifier):
         )
 
 
-def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter) -> MCPServer:
+def build_mcp(runtime: Runtime, validator: Authenticator, limiter: RateLimiter) -> MCPServer:
     settings = runtime.settings
     base = settings.public_base_url.rstrip("/")
-    issuer = settings.entra_issuer if settings.auth_mode == "entra" else f"{base}/dev-issuer"
     mcp = MCPServer(
         name="zentral",
         title="Zentral Service Desk",
         instructions=INSTRUCTIONS,
         token_verifier=_Verifier(validator),
         auth=AuthSettings(
-            issuer_url=issuer,
+            issuer_url=settings.issuer,
             resource_server_url=f"{base}/mcp",
             # The verifier validates the audience itself (Entra does not use RFC 8707).
             validate_token_resource=False,

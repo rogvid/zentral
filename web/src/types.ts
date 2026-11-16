@@ -1,14 +1,18 @@
 export type Status = "new" | "open" | "pending" | "resolved" | "closed";
 export type Priority = "low" | "normal" | "high" | "urgent";
 
-export interface AppConfig {
-  auth_mode: "entra" | "dev";
+export interface AuthConfig {
+  mode: "entra" | "oidc" | "dev";
   authority: string;
-  spa_client_id: string;
-  api_scope: string;
+  client_id: string;
+  scopes: string[];
+}
+
+export interface AppConfig {
+  auth: AuthConfig;
   ticket_prefix: string;
   categories: string[];
-  dev_personas: string[];
+  require_system_to_resolve: boolean;
 }
 
 export interface Me {
@@ -40,9 +44,13 @@ export interface Ticket {
   team_name: string | null;
   assignee_id: string | null;
   assignee_name: string | null;
+  system_id: string | null;
+  system_key: string | null;
+  system_name: string | null;
   requester: Requester | null;
   ai_category: string | null;
   ai_priority: Priority | null;
+  ai_system_key: string | null;
   ai_confidence: number | null;
   ai_summary: string | null;
   created_at: string;
@@ -75,6 +83,16 @@ export interface Team {
   member_ids: string[];
 }
 
+export interface SystemInfo {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  default_team_id: string | null;
+  active: boolean;
+}
+
 export interface User {
   id: string;
   kind: string;
@@ -96,6 +114,7 @@ export interface Source {
   connector: string;
   config: Record<string, unknown>;
   default_team_id: string | null;
+  default_system_id: string | null;
   enabled: boolean;
   has_secrets: boolean;
   has_token: boolean;

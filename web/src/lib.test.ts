@@ -36,3 +36,19 @@ describe("formatting", () => {
     expect(query({})).toBe("");
   });
 });
+
+import { base64Url, challengeFor, randomToken } from "./auth";
+
+describe("PKCE helpers", () => {
+  it("matches the RFC 7636 appendix B test vector", async () => {
+    expect(await challengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+      "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    );
+  });
+  it("produces url-safe, unpadded, unpredictable values", () => {
+    expect(base64Url(new Uint8Array([251, 255, 254]))).toBe("-__-");
+    const a = randomToken(48);
+    expect(a).toMatch(/^[A-Za-z0-9_-]{64}$/);
+    expect(a).not.toBe(randomToken(48));
+  });
+});

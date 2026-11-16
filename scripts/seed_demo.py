@@ -20,6 +20,7 @@ ALERTS = [
         "description": "Filesystem /var/lib/postgresql is at 95%. Alert fired by monitoring.",
         "severity": "critical",
         "thread_key": "disk:db-prod-01",
+        "system": "db-platform",
     },
     {
         "title": "Cannot sign in after password change",
@@ -86,6 +87,52 @@ def main() -> None:
             json={"user_id": me["subject"]},
         )
 
+        systems = {}
+        for key, name, description, keywords, team in (
+            (
+                "payments",
+                "Payment platform",
+                "Card payments, invoicing and refunds",
+                ["invoice", "refund", "checkout"],
+                None,
+            ),
+            (
+                "identity",
+                "Identity & sign-in",
+                "Accounts, passwords and MFA",
+                ["password", "sign in", "locked out"],
+                "Service Desk",
+            ),
+            (
+                "hr-portal",
+                "HR portal",
+                "Onboarding, leave and payslips",
+                ["onboarding", "payslip"],
+                None,
+            ),
+            ("vpn", "Remote access VPN", "", ["vpn"], "Infrastructure"),
+            (
+                "db-platform",
+                "Database platform",
+                "Managed PostgreSQL clusters",
+                ["db-prod", "postgresql"],
+                "Infrastructure",
+            ),
+        ):
+            r = http.post(
+                "/api/v1/systems",
+                headers=admin,
+                json={
+                    "key": key,
+                    "name": name,
+                    "description": description,
+                    "keywords": keywords,
+                    "default_team_id": teams[team] if team else None,
+                },
+            )
+            if r.status_code == 201:
+                systems[key] = r.json()["id"]
+
         for rule in (
             {
                 "name": "Security incidents to Security",
@@ -112,7 +159,6 @@ def main() -> None:
             json={
                 "name": "Monitoring & forms",
                 "connector": "webhook",
-                "default_team_id": teams["Service Desk"],
             },
         )
         if r.status_code != 201:
@@ -140,7 +186,9 @@ def main() -> None:
                 "body": "Hi Jane,\n\nI have unlocked your account. Please update the saved password on your phone as well, otherwise it will lock again.\n\nBest regards,\nService Desk",
             },
         )
-        print(f"Seeded {len(ALERTS)} tickets, 3 teams, 2 rules. Open {BASE}")
+        print(
+            f"Seeded {len(ALERTS)} tickets, {len(systems)} systems, 3 teams, 2 rules. Open {BASE}"
+        )
 
 
 if __name__ == "__main__":

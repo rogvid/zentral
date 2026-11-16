@@ -1,14 +1,35 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from zentral.api.deps import CtxDep, RuntimeDep
+from zentral.api.routes.devidp import CLIENT_ID as DEV_CLIENT_ID
+from zentral.config import Settings
 from zentral.schemas import MeOut
 
 router = APIRouter(tags=["meta"])
+
+
+def sign_in_scopes(s: Settings) -> list[str]:
+    """Scopes the web client requests when signing in."""
+    if s.auth_mode == "entra":
+        api_scope = f"api://{s.entra_api_client_id}/{s.entra_required_scope}"
+        return ["openid", "profile", "offline_access", api_scope]
+    if s.auth_mode == "oidc":
+        return list(dict.fromkeys([*s.oidc_scopes, *filter(None, [s.oidc_required_scope])]))
+    return ["openid"]
+
+
+def sign_in_origins(s: Settings) -> list[str]:
+    """Origins the browser must reach to sign in (for the Content-Security-Policy)."""
+    if s.auth_mode == "dev":
+        return []
+    parts = urlsplit(s.issuer)
+    return list(dict.fromkeys([f"{parts.scheme}://{parts.netloc}", *s.csp_connect_extra]))
 
 
 @router.get("/healthz", include_in_schema=False)
@@ -28,18 +49,25 @@ async def readyz(rt: RuntimeDep, response: Response) -> dict[str, str]:
 
 
 @router.get("/api/v1/config")
-async def public_config(request: Request, rt: RuntimeDep) -> dict[str, Any]:
+async def public_config(rt: RuntimeDep) -> dict[str, Any]:
     """Non-secret bootstrap information for the web client."""
     s = rt.settings
+    client_id = {
+        "entra": s.entra_spa_client_id,
+        "oidc": s.oidc_client_id,
+        "dev": DEV_CLIENT_ID,
+    }[s.auth_mode]
     return {
-        "auth_mode": s.auth_mode,
-        "tenant_id": s.entra_tenant_id,
-        "authority": f"{s.entra_authority_host}/{s.entra_tenant_id}",
-        "spa_client_id": s.entra_spa_client_id,
-        "api_scope": f"api://{s.entra_api_client_id}/{s.entra_required_scope}",
+        # Everything the browser needs for OpenID Connect sign-in (code + PKCE).
+        "auth": {
+            "mode": s.auth_mode,
+            "authority": s.issuer,
+            "client_id": client_id,
+            "scopes": sign_in_scopes(s),
+        },
         "ticket_prefix": s.ticket_prefix,
         "categories": s.categories,
-        "dev_personas": sorted(request.app.state.dev_personas),
+        "require_system_to_resolve": s.require_system_to_resolve,
     }
 
 

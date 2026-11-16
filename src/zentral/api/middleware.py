@@ -10,12 +10,16 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 log = structlog.get_logger("zentral.access")
 
-CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "font-src 'self'; connect-src 'self' https://login.microsoftonline.com; "
-    "frame-src https://login.microsoftonline.com; frame-ancestors 'none'; "
-    "base-uri 'self'; form-action 'self'; object-src 'none'"
-)
+
+def content_security_policy(connect_origins: list[str]) -> str:
+    """No inline script or style, no framing, and network access limited to this
+    origin plus the identity provider's (needed for the browser sign-in flow)."""
+    connect = " ".join(["'self'", *connect_origins])
+    return (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        f"font-src 'self'; connect-src {connect}; frame-src 'none'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'; object-src 'none'"
+    )
 
 
 class _BodyTooLarge(Exception):
@@ -23,16 +27,18 @@ class _BodyTooLarge(Exception):
 
 
 class HardeningMiddleware:
-    def __init__(self, app: ASGIApp, *, max_body_bytes: int, hsts: bool) -> None:
+    def __init__(
+        self, app: ASGIApp, *, max_body_bytes: int, hsts: bool, connect_origins: list[str]
+    ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
         self.headers: list[tuple[bytes, bytes]] = [
             (b"x-content-type-options", b"nosniff"),
             (b"x-frame-options", b"DENY"),
             (b"referrer-policy", b"no-referrer"),
-            (b"content-security-policy", CSP.encode()),
+            (b"content-security-policy", content_security_policy(connect_origins).encode()),
             (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-            (b"cross-origin-opener-policy", b"same-origin-allow-popups"),
+            (b"cross-origin-opener-policy", b"same-origin"),
         ]
         if hsts:
             self.headers.append(

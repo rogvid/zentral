@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useApp, useLoad } from "../context";
 import { query, relativeTime, titleCase } from "../lib";
-import type { Priority, Team, TicketPage } from "../types";
+import type { Priority, SystemInfo, Team, TicketPage } from "../types";
 import { Chip, Dialog, Empty, ErrorState, Field, PageHead, PriorityMark, Spinner, StatusBadge } from "../ui";
 
 type View = "active" | "mine" | "unassigned" | "all";
@@ -14,7 +14,17 @@ const VIEWS: { id: View; label: string }[] = [
 const PAGE_SIZE = 25;
 const ACTIVE = "&status=new&status=open&status=pending";
 
-function NewTicket({ teams, onClose, onCreated }: { teams: Team[]; onClose: () => void; onCreated: (id: number) => void }) {
+function NewTicket({
+  teams,
+  systems,
+  onClose,
+  onCreated,
+}: {
+  teams: Team[];
+  systems: SystemInfo[];
+  onClose: () => void;
+  onCreated: (id: number) => void;
+}) {
   const { api, config, can, notify } = useApp();
   const [busy, setBusy] = useState(false);
 
@@ -30,6 +40,7 @@ function NewTicket({ teams, onClose, onCreated }: { teams: Team[]; onClose: () =
         priority: text("priority"),
         category: text("category") || null,
         team_id: text("team_id") || null,
+        system_id: text("system_id") || null,
         requester_email: text("requester_email") || null,
         requester_name: text("requester_name") || null,
       });
@@ -59,6 +70,16 @@ function NewTicket({ teams, onClose, onCreated }: { teams: Team[]; onClose: () =
             </Field>
           </div>
         )}
+        <Field label="System" hint="Which system is this about? Leave empty to let AI suggest one.">
+          <select name="system_id" defaultValue="">
+            <option value="">Not specified</option>
+            {systems.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <div className="form-row">
           <Field label="Priority">
             <select name="priority" defaultValue="normal">
@@ -110,6 +131,7 @@ export function InboxPage() {
   const [term, setTerm] = useState("");
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [system, setSystem] = useState("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -120,6 +142,7 @@ export function InboxPage() {
   }, [search]);
 
   const teams = useLoad(() => api.get<Team[]>("/teams"), []);
+  const systems = useLoad(() => api.get<SystemInfo[]>("/systems"), []);
   const page = useLoad(() => {
     const base = query({
       q: term,
@@ -127,9 +150,11 @@ export function InboxPage() {
       offset,
       assignee_id: view === "mine" ? me.subject : undefined,
       unassigned: view === "unassigned",
+      system_id: system && system !== "none" ? system : undefined,
+      no_system: system === "none",
     });
     return api.get<TicketPage>(`/tickets${base}${view === "all" ? "" : ACTIVE}`);
-  }, [view, term, offset]);
+  }, [view, term, offset, system]);
 
   const data = page.data;
   return (
@@ -162,6 +187,22 @@ export function InboxPage() {
             </button>
           ))}
         </div>
+        <select
+          aria-label="Filter by system"
+          value={system}
+          onChange={(e) => {
+            setSystem(e.target.value);
+            setOffset(0);
+          }}
+        >
+          <option value="">All systems</option>
+          {(systems.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+          <option value="none">No system yet</option>
+        </select>
         <input
           className="search"
           type="search"
@@ -187,6 +228,7 @@ export function InboxPage() {
                 <th>Ticket</th>
                 <th>Status</th>
                 <th>Priority</th>
+                <th>System</th>
                 <th>Category</th>
                 <th>Team</th>
                 <th>Assignee</th>
@@ -210,6 +252,15 @@ export function InboxPage() {
                   </td>
                   <td>
                     <PriorityMark priority={t.priority} />
+                  </td>
+                  <td>
+                    {t.system_name ? (
+                      <Chip tone="system">{t.system_name}</Chip>
+                    ) : t.ai_system_key ? (
+                      <Chip tone="ai">{t.ai_system_key}?</Chip>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
                   </td>
                   <td>
                     {t.category ? (
@@ -243,6 +294,7 @@ export function InboxPage() {
       {creating && (
         <NewTicket
           teams={teams.data ?? []}
+          systems={systems.data ?? []}
           onClose={() => setCreating(false)}
           onCreated={(id) => (window.location.hash = `#/tickets/${id}`)}
         />

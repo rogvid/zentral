@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApp, useLoad } from "../context";
 import { percent, relativeTime, titleCase } from "../lib";
-import type { Message, Priority, Status, Team, Ticket, User } from "../types";
+import type { Message, Priority, Status, SystemInfo, Team, Ticket, User } from "../types";
 import { Avatar, Chip, ErrorState, Field, PriorityMark, Spinner, StatusBadge } from "../ui";
 
 const STATUSES: Status[] = ["new", "open", "pending", "resolved", "closed"];
@@ -94,6 +94,7 @@ export function TicketPage({ id }: { id: number }) {
   const ticket = useLoad(() => api.get<Ticket>(`/tickets/${id}`), [id]);
   const messages = useLoad(() => api.get<Message[]>(`/tickets/${id}/messages`), [id]);
   const teams = useLoad(() => api.get<Team[]>("/teams"), []);
+  const systems = useLoad(() => api.get<SystemInfo[]>("/systems"), []);
   const users = useLoad(() => (can("ticket:assign") ? api.get<User[]>("/users") : Promise.resolve([])), []);
 
   if (ticket.error) return <ErrorState message={ticket.error} retry={ticket.reload} />;
@@ -110,6 +111,10 @@ export function TicketPage({ id }: { id: number }) {
   }
 
   const suggestion = t.ai_category && t.ai_category !== t.category ? t.ai_category : null;
+  const suggestedSystem =
+    t.ai_system_key && t.ai_system_key !== t.system_key
+      ? (systems.data ?? []).find((s) => s.key === t.ai_system_key)
+      : undefined;
   const staff = (users.data ?? []).filter((u) => u.kind === "user");
 
   return (
@@ -124,6 +129,7 @@ export function TicketPage({ id }: { id: number }) {
           <div className="ticket-meta">
             <StatusBadge status={t.status} />
             <PriorityMark priority={t.priority} />
+            {t.system_name ? <Chip tone="system">{t.system_name}</Chip> : <Chip tone="note">No system</Chip>}
             <span className="muted">
               opened {relativeTime(t.created_at)} via {titleCase(t.channel)}
             </span>
@@ -153,6 +159,19 @@ export function TicketPage({ id }: { id: number }) {
       <aside className="ticket-side">
         <div className="card panel">
           <h2>Details</h2>
+          <Field label="System" hint={t.system_id ? undefined : "Which system is this ticket about?"}>
+            <select value={t.system_id ?? ""} disabled={!editable} onChange={(e) => void update({ system_id: e.target.value || null })}>
+              <option value="">Not specified</option>
+              {(systems.data ?? []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+              {t.system_id && !(systems.data ?? []).some((s) => s.id === t.system_id) && (
+                <option value={t.system_id}>{t.system_name} (retired)</option>
+              )}
+            </select>
+          </Field>
           <Field label="Status">
             <select value={t.status} disabled={!editable} onChange={(e) => void update({ status: e.target.value })}>
               {STATUSES.map((s) => (
@@ -231,12 +250,19 @@ export function TicketPage({ id }: { id: number }) {
               <dd>{titleCase(t.ai_category)}</dd>
               <dt>Suggested priority</dt>
               <dd>{t.ai_priority ? titleCase(t.ai_priority) : "–"}</dd>
+              <dt>Suggested system</dt>
+              <dd>{t.ai_system_key ?? "–"}</dd>
               <dt>Confidence</dt>
               <dd>{percent(t.ai_confidence)}</dd>
             </dl>
             {suggestion && editable && (
               <button className="btn btn-block" onClick={() => void update({ category: suggestion })}>
                 Apply “{titleCase(suggestion)}”
+              </button>
+            )}
+            {suggestedSystem && editable && (
+              <button className="btn btn-block" onClick={() => void update({ system_id: suggestedSystem.id })}>
+                Set system to “{suggestedSystem.name}”
               </button>
             )}
             <p className="muted small">A suggestion, not a decision. Personal data was masked before analysis.</p>

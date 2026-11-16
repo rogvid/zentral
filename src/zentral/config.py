@@ -46,6 +46,17 @@ def _split(value: Any) -> Any:
     return value
 
 
+def _mapping(value: Any) -> Any:
+    """Accept a JSON object, or ``external=Role,other=Role`` for mapping settings."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("{"):
+            return json.loads(text)
+        pairs = (item.split("=", 1) for item in text.split(",") if "=" in item)
+        return {k.strip(): v.strip() for k, v in pairs}
+    return value
+
+
 StrList = Annotated[list[str], NoDecode, BeforeValidator(_split)]
 SecretList = Annotated[list[SecretStr], NoDecode, BeforeValidator(_split)]
 
@@ -69,8 +80,16 @@ class Settings(BaseSettings):
     # Governance: a ticket cannot be resolved or closed until it names the system it concerns.
     require_system_to_resolve: bool = False
 
-    # --- Authentication (Microsoft Entra ID) --------------------------------
-    auth_mode: Literal["entra", "dev"] = "entra"
+    # --- Authentication -------------------------------------------------------
+    # entra: Microsoft Entra ID · oidc: any OpenID Connect provider · dev: built-in dev IdP
+    auth_mode: Literal["entra", "oidc", "dev"] = "entra"
+    # Map IdP role or group values to Zentral roles, e.g.
+    # {"servicedesk-admins": "Zentral.Admin", "<entra-group-id>": "Zentral.Agent"}.
+    role_map: Annotated[dict[str, str], NoDecode, BeforeValidator(_mapping)] = Field(
+        default_factory=dict
+    )
+
+    # Microsoft Entra ID
     entra_tenant_id: str = ""
     entra_api_client_id: str = ""
     entra_spa_client_id: str = ""
@@ -78,6 +97,24 @@ class Settings(BaseSettings):
     entra_required_scope: str = "access_as_user"
     # Extra accepted audiences; ``<client-id>`` and ``api://<client-id>`` are always accepted.
     entra_extra_audiences: StrList = Field(default_factory=list)
+
+    # Generic OpenID Connect provider (auth_mode=oidc)
+    oidc_issuer: str = ""
+    oidc_jwks_uri: str = ""  # optional; discovered from the issuer when empty
+    oidc_audiences: StrList = Field(default_factory=list)
+    oidc_algorithms: StrList = Field(default_factory=lambda: ["RS256"])
+    oidc_client_id: str = ""  # public client used by the web UI
+    oidc_scopes: StrList = Field(default_factory=lambda: ["openid", "profile"])
+    oidc_required_scope: str = ""
+    oidc_subject_claim: str = "sub"
+    oidc_scope_claim: str = "scope"
+    oidc_roles_claim: str = "roles"
+    oidc_groups_claim: str = "groups"
+    oidc_name_claim: str = "name"
+    oidc_email_claim: str = "email"
+    # Extra origins the browser may call during sign-in (if the IdP's token
+    # endpoint lives on a different origin than its issuer).
+    csp_connect_extra: StrList = Field(default_factory=list)
 
     # --- Data protection ----------------------------------------------------
     # Fernet keys, newest first. All are tried for decryption; the first encrypts.
@@ -142,6 +179,15 @@ class Settings(BaseSettings):
         return [cid, f"api://{cid}", *self.entra_extra_audiences]
 
     @property
+    def issuer(self) -> str:
+        """The token issuer for the active authentication mode."""
+        if self.auth_mode == "entra":
+            return self.entra_issuer
+        if self.auth_mode == "oidc":
+            return self.oidc_issuer
+        return self.public_base_url.rstrip("/") + "/dev-idp"
+
+    @property
     def ai_is_cloud(self) -> bool:
         return self.ai_provider in CLOUD_AI_PROVIDERS
 
@@ -156,9 +202,14 @@ class Settings(BaseSettings):
             problems.append("ZENTRAL_AUDIT_HMAC_KEY must be at least 32 characters")
         if self.auth_mode == "entra" and not (self.entra_tenant_id and self.entra_api_client_id):
             problems.append("Entra auth requires ZENTRAL_ENTRA_TENANT_ID and _API_CLIENT_ID")
+        if self.auth_mode == "oidc":
+            if not (self.oidc_issuer and self.oidc_audiences):
+                problems.append("OIDC auth requires ZENTRAL_OIDC_ISSUER and ZENTRAL_OIDC_AUDIENCES")
+            if self.is_production and not self.oidc_issuer.startswith("https://"):
+                problems.append("production requires an https ZENTRAL_OIDC_ISSUER")
         if self.is_production:
-            if self.auth_mode != "entra":
-                problems.append("production requires ZENTRAL_AUTH_MODE=entra")
+            if self.auth_mode == "dev":
+                problems.append("ZENTRAL_AUTH_MODE=dev is not allowed in production")
             if self.database_url.startswith("sqlite"):
                 problems.append("production requires PostgreSQL, not SQLite")
             if "*" in self.cors_origins:

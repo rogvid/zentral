@@ -13,7 +13,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from zentral import __version__
@@ -21,28 +20,24 @@ from zentral.api.deps import request_meta
 from zentral.api.middleware import HardeningMiddleware, McpPathMiddleware
 from zentral.api.ratelimit import RateLimiter
 from zentral.api.routes import admin, compliance, hooks, meta, tickets
+from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
 from zentral.logging import configure_logging
 from zentral.mcp_server import build_mcp, mcp_asgi_app
 from zentral.runtime import Runtime, build_runtime
-from zentral.security.devauth import PERSONAS, LocalIssuer
-from zentral.security.entra import TokenValidator
+from zentral.security.devauth import LocalIssuer
+from zentral.security.tokens import Authenticator, TokenValidator
 from zentral.services.context import record_denied
 from zentral.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 log = structlog.get_logger(__name__)
 
 
-class _PersonaIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    persona: str
-
-
 def create_app(
     settings: Settings | None = None,
     *,
     runtime: Runtime | None = None,
-    validator: TokenValidator | None = None,
+    validator: Authenticator | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
@@ -52,11 +47,11 @@ def create_app(
     dev_issuer: LocalIssuer | None = None
     if validator is None:
         if settings.auth_mode == "dev":
-            dev_issuer = LocalIssuer()
+            dev_issuer = LocalIssuer(issuer=settings.issuer)
             validator = dev_issuer.validator()
             log.warning("dev_auth_enabled", note="anyone can obtain a token; never expose this")
         else:
-            validator = TokenValidator.for_entra(settings, runtime.http)
+            validator = TokenValidator.for_settings(settings, runtime.http)
 
     mcp = build_mcp(runtime, validator, limiter)
     mcp_app = mcp_asgi_app(mcp, runtime)
@@ -78,7 +73,6 @@ def create_app(
     app.state.runtime = runtime
     app.state.validator = validator
     app.state.limiter = limiter
-    app.state.dev_personas = list(PERSONAS) if dev_issuer else []
 
     # --- middleware (outermost last) ----------------------------------------------
     app.add_middleware(McpPathMiddleware)
@@ -96,7 +90,10 @@ def create_app(
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
     app.add_middleware(
-        HardeningMiddleware, max_body_bytes=settings.max_body_bytes, hsts=settings.is_production
+        HardeningMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+        hsts=settings.is_production,
+        connect_origins=meta.sign_in_origins(settings),
     )
 
     # --- routes -----------------------------------------------------------------------
@@ -105,13 +102,7 @@ def create_app(
         app.include_router(router, prefix="/api/v1")
 
     if dev_issuer is not None:
-        issuer = dev_issuer
-
-        @app.post("/api/v1/dev/token", include_in_schema=False)
-        async def dev_token(data: _PersonaIn) -> dict[str, str]:
-            if data.persona not in PERSONAS:
-                raise HTTPException(404, "unknown persona")
-            return {"access_token": issuer.issue_persona(data.persona)}
+        app.include_router(build_dev_idp(dev_issuer, settings))
 
     @app.get("/.well-known/oauth-protected-resource/mcp", include_in_schema=False)
     async def protected_resource_metadata() -> dict[str, Any]:
@@ -119,10 +110,8 @@ def create_app(
         base = settings.public_base_url.rstrip("/")
         return {
             "resource": f"{base}/mcp",
-            "authorization_servers": [settings.entra_issuer],
-            "scopes_supported": [
-                f"api://{settings.entra_api_client_id}/{settings.entra_required_scope}"
-            ],
+            "authorization_servers": [settings.issuer],
+            "scopes_supported": meta.sign_in_scopes(settings),
             "bearer_methods_supported": ["header"],
         }
 

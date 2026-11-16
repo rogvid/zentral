@@ -69,7 +69,8 @@ async def test_dev_token_endpoint_absent_unless_dev_issuer_is_active(client):
         404,
         405,
     )
-    assert (await client.get("/api/v1/config")).json()["dev_personas"] == []
+    assert (await client.get("/dev-idp/authorize")).status_code == 404
+    assert (await client.get("/dev-idp/.well-known/openid-configuration")).status_code == 404
 
 
 def test_rate_limiter():
@@ -126,6 +127,11 @@ def prod(**overrides):
 
 def test_valid_production_config_passes():
     prod().validate_for_runtime()
+    prod(
+        auth_mode="oidc",
+        oidc_issuer="https://idp.corp.example/realms/x",
+        oidc_audiences=["zentral"],
+    ).validate_for_runtime()
     assert prod().entra_audiences == ["c", "api://c"]
 
 
@@ -133,6 +139,12 @@ def test_valid_production_config_passes():
     "overrides",
     [
         {"auth_mode": "dev"},
+        {"auth_mode": "oidc"},
+        {
+            "auth_mode": "oidc",
+            "oidc_issuer": "http://idp.corp.example",
+            "oidc_audiences": ["zentral"],
+        },
         {"database_url": "sqlite+aiosqlite:///x.db"},
         {"cors_origins": ["*"]},
         {"public_base_url": "http://desk.corp.example"},

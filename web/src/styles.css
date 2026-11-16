@@ -139,6 +139,7 @@ select:disabled, input:read-only { background: var(--surface-2); }
 /* --- badges ----------------------------------------------------------- */
 .badge, .chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .chip { background: var(--surface-2); color: var(--muted); }
+.chip-system { background: var(--accent-soft); color: var(--accent); }
 .chip-ai { background: var(--ai-soft); color: var(--ai); }
 .chip-ok { background: var(--ok-soft); color: var(--ok); }
 .chip-danger { background: var(--danger-soft); color: var(--danger); }
@@ -229,10 +230,6 @@ select:disabled, input:read-only { background: var(--surface-2); }
 .dialog::backdrop { background: rgb(10 12 16 / 55%); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .dialog-head h2 { font-size: 17px; }
-
-.persona-card { padding: 28px; width: min(460px, 100%); display: flex; flex-direction: column; gap: 16px; }
-.persona-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.persona { display: flex; align-items: center; gap: 10px; padding: 10px; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Api } from "./api";
-import { choosePersona, loadConfig, startSession, type Session } from "./auth";
+import { loadConfig, startSession, type Session } from "./auth";
 import { AppContext, type AppState } from "./context";
-import { parseRoute, titleCase, type Route } from "./lib";
+import { parseRoute, type Route } from "./lib";
 import { AdminPage } from "./pages/Admin";
 import { AuditPage } from "./pages/Audit";
 import { InboxPage } from "./pages/Inbox";
@@ -20,7 +20,6 @@ interface Toast {
 type Boot =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "persona"; config: AppConfig }
   | { phase: "ready"; config: AppConfig; session: Session; me: Me };
 
 function useRoute(): Route {
@@ -33,37 +32,6 @@ function useRoute(): Route {
   return route;
 }
 
-function PersonaPicker({ config }: { config: AppConfig }) {
-  return (
-    <main className="centered">
-      <div className="card persona-card">
-        <div className="brand brand-large">
-          <span className="brand-mark">Z</span> Zentral
-        </div>
-        <p className="warning-banner">
-          Development mode. Sign-in is simulated — never expose this instance to a network.
-        </p>
-        <h2>Continue as</h2>
-        <div className="persona-grid">
-          {config.dev_personas.map((persona) => (
-            <button
-              key={persona}
-              className="btn persona"
-              onClick={() => {
-                choosePersona(persona);
-                window.location.reload();
-              }}
-            >
-              <Avatar name={persona} />
-              {titleCase(persona)}
-            </button>
-          ))}
-        </div>
-      </div>
-    </main>
-  );
-}
-
 const NAV: { page: Route["page"]; href: string; label: string; needs: string[] }[] = [
   { page: "inbox", href: "#/", label: "Inbox", needs: ["ticket:read"] },
   { page: "audit", href: "#/audit", label: "Audit trail", needs: ["audit:read"] },
@@ -72,7 +40,7 @@ const NAV: { page: Route["page"]; href: string; label: string; needs: string[] }
     page: "admin",
     href: "#/admin",
     label: "Administration",
-    needs: ["team:manage", "source:manage", "rule:manage"],
+    needs: ["team:manage", "system:manage", "source:manage", "rule:manage"],
   },
 ];
 
@@ -85,10 +53,6 @@ export function App() {
     (async () => {
       const config = await loadConfig();
       const session = await startSession(config);
-      if (!session) {
-        if (config.auth_mode === "dev") setBoot({ phase: "persona", config });
-        return;
-      }
       const me = await new Api(session).get<Me>("/me");
       setBoot({ phase: "ready", config, session, me });
     })().catch((e: unknown) =>
@@ -114,9 +78,8 @@ export function App() {
     };
   }, [boot, notify]);
 
-  if (boot.phase === "loading") return <Spinner label="Starting Zentral" />;
-  if (boot.phase === "error") return <ErrorState message={boot.message} />;
-  if (boot.phase === "persona") return <PersonaPicker config={boot.config} />;
+  if (boot.phase === "loading") return <Spinner label="Signing in" />;
+  if (boot.phase === "error") return <ErrorState message={boot.message} retry={() => window.location.assign("/")} />;
   if (!state) return null;
 
   const nav = NAV.filter((item) => item.needs.some((p) => state.can(p)));
@@ -130,6 +93,7 @@ export function App() {
           <a className="brand" href="#/">
             <span className="brand-mark">Z</span> Zentral
           </a>
+          {state.config.auth.mode === "dev" && <p className="warning-banner small">Development sign-in</p>}
           <nav aria-label="Main">
             {nav.map((item) => (
               <a

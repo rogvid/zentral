@@ -11,8 +11,8 @@ from fastapi import Depends, HTTPException, Request, status
 from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
 from zentral.runtime import Runtime
-from zentral.security.entra import AuthenticationError, TokenValidator
 from zentral.security.principal import Principal
+from zentral.security.tokens import AuthenticationError, Authenticator
 from zentral.services.context import Ctx, resolve_team_ids, touch_user
 
 log = structlog.get_logger(__name__)
@@ -45,7 +45,7 @@ def _unauthenticated() -> HTTPException:
 
 
 async def get_principal(request: Request) -> Principal:
-    validator: TokenValidator = request.app.state.validator
+    validator: Authenticator = request.app.state.validator
     limiter: RateLimiter = request.app.state.limiter
     runtime = get_runtime(request)
     scheme, _, token = request.headers.get("authorization", "").partition(" ")

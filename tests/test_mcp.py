@@ -58,8 +58,8 @@ async def test_initialize_and_tool_listing(client, auth):
         "add_note",
         "reply_to_requester",
         "list_teams",
-            "list_categories",
-            "list_systems",
+        "list_categories",
+        "list_systems",
     }
     assert all(t["description"] for t in tools)
 

@@ -28,6 +28,7 @@ markdown_extensions:
   - tables
   - toc: { permalink: true }
   - pymdownx.details
+  - pymdownx.keys
   - pymdownx.highlight
   - pymdownx.superfences:
       custom_fences:

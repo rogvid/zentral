@@ -42,7 +42,11 @@ PERMISSION_HELP = {
 
 def rbac_table() -> str:
     roles = list(Role)
-    head = "| Permission | What it allows | " + " | ".join(r.value.removeprefix("Zentral.") for r in roles) + " |"
+    head = (
+        "| Permission | What it allows | "
+        + " | ".join(r.value.removeprefix("Zentral.") for r in roles)
+        + " |"
+    )
     rule = "|---|---|" + "|".join(":-:" for _ in roles) + "|"
     rows = [
         f"| `{p.value}` | {PERMISSION_HELP[p]} | "
@@ -60,6 +64,8 @@ def config_table() -> str:
         secret = "Secret" in str(field.annotation)
         if secret or isinstance(default, SecretStr):
             shown = "*(secret, none)*"
+        elif default is None:
+            shown = "*(none)*"
         elif default in ("", [], {}):
             shown = "*(empty)*"
         elif isinstance(default, list):
@@ -68,6 +74,7 @@ def config_table() -> str:
             shown = f"`{default}`"
         kind = re.sub(r"typing\.|<class '|'>|Annotated\[|, NoDecode.*", "", str(field.annotation))
         kind = kind.replace("pydantic.types.", "").replace("Literal", "one of ")
+        kind = kind.replace(" | None", ", optional").replace("|", "\\|")
         rows.append(f"| `ZENTRAL_{name.upper()}` | {shown} | {kind} |")
     return "\n".join(rows)
 
@@ -81,11 +88,11 @@ BLOCKS = {
 def render(text: str, generators: dict) -> str:
     for name, generate in generators.items():
         pattern = re.compile(
-            rf"(<!-- BEGIN GENERATED: {name} -->\n).*?(\n<!-- END GENERATED -->)", re.DOTALL
+            rf"(<!-- BEGIN GENERATED: {name} -->\n).*?(<!-- END GENERATED -->)", re.DOTALL
         )
         if not pattern.search(text):
             raise SystemExit(f"marker for {name!r} not found")
-        text = pattern.sub(lambda m, g=generate: m.group(1) + g() + m.group(2), text)
+        text = pattern.sub(lambda m, g=generate: m.group(1) + g() + "\n" + m.group(2), text)
     return text
 
 

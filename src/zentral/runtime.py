@@ -63,7 +63,10 @@ def build_runtime(
         settings=settings,
         engine=engine,
         sessions=create_session_factory(engine),
-        trail=AuditTrail(settings.audit_hmac_key.get_secret_value()),
+        trail=AuditTrail(
+            settings.audit_hmac_key.get_secret_value(),
+            tuple(k.get_secret_value() for k in settings.audit_hmac_previous_keys),
+        ),
         registry=ConnectorRegistry.load(settings),
         http=http,
         ai=ai or load_provider(settings, http),

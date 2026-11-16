@@ -124,3 +124,24 @@ async def test_database_refuses_to_rewrite_history(client, auth, db, statement):
         await db.execute(text(statement))
     await db.rollback()
     assert (await verify(client, auth))["ok"] is True
+
+
+async def test_audit_key_rotation_keeps_old_events_verifiable(client, auth, db, runtime):
+    await seed(client, auth, 2)
+    old_key = runtime.settings.audit_hmac_key.get_secret_value()
+    new_key = "n" * 40
+
+    # Rotated without declaring the old key: old events no longer verify.
+    assert (await AuditTrail(new_key).verify(db)).first_bad_seq == 1
+
+    # Rotated properly: old events verify under the retired key, new ones are
+    # written with the new key and chain on from the old ones.
+    runtime.trail = rotated = AuditTrail(new_key, (old_key,))
+    client._transport.app.state.runtime.trail = rotated
+    await seed(client, auth, 2)
+    result = await rotated.verify(db)
+    assert result.ok and result.checked >= 4
+    # The retired key alone cannot produce events that pass as current ones…
+    assert not (await AuditTrail(old_key).verify(db)).ok
+    # …and an unrelated key verifies nothing.
+    assert (await AuditTrail("x" * 40, ("y" * 40,)).verify(db)).first_bad_seq == 1

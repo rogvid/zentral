@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     blind_index_key: SecretStr = SecretStr("")
     # Key for the tamper-evident audit chain (HMAC-SHA256).
     audit_hmac_key: SecretStr = SecretStr("")
+    # Retired audit keys, still accepted when verifying older events.
+    audit_hmac_previous_keys: SecretList = Field(default_factory=list)
     # Tickets resolved/closed for longer than this are scrubbed of personal data.
     retention_days: int = Field(default=365, ge=1)
 

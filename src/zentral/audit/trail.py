@@ -88,16 +88,25 @@ def _canonical(event: AuditEvent) -> bytes:
 
 
 class AuditTrail:
-    def __init__(self, hmac_key: str) -> None:
+    def __init__(self, hmac_key: str, previous_keys: tuple[str, ...] = ()) -> None:
+        """``previous_keys`` are retired keys that are still accepted when
+        *verifying* events written before a key rotation. New events are always
+        written with ``hmac_key``."""
         if not hmac_key:
             raise ValueError("audit HMAC key is required")
         self._key = hmac_key.encode()
+        self._verify_keys = (self._key, *(k.encode() for k in previous_keys if k))
         self._local_lock = asyncio.Lock()
 
-    def _digest(self, prev_hash: str, event: AuditEvent) -> str:
-        return hmac.new(
-            self._key, prev_hash.encode() + _canonical(event), hashlib.sha256
-        ).hexdigest()
+    def _digest(self, prev_hash: str, event: AuditEvent, key: bytes | None = None) -> str:
+        message = prev_hash.encode() + _canonical(event)
+        return hmac.new(key or self._key, message, hashlib.sha256).hexdigest()
+
+    def _matches(self, prev_hash: str, event: AuditEvent) -> bool:
+        return any(
+            hmac.compare_digest(event.hash, self._digest(prev_hash, event, key))
+            for key in self._verify_keys
+        )
 
     @asynccontextmanager
     async def serialized(self, session: AsyncSession) -> AsyncIterator[None]:
@@ -189,7 +198,7 @@ class AuditTrail:
                 if (
                     event.seq != expected_seq
                     or event.prev_hash != prev_hash
-                    or not hmac.compare_digest(event.hash, self._digest(prev_hash, event))
+                    or not self._matches(prev_hash, event)
                 ):
                     return VerifyResult(ok=False, checked=checked, first_bad_seq=expected_seq)
                 prev_hash = event.hash

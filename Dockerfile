@@ -26,8 +26,7 @@ RUN uv sync --frozen --no-dev --no-editable
 # --- 3. runtime ----------------------------------------------------------------
 FROM python:3.13-slim AS runtime
 LABEL org.opencontainers.image.title="Zentral" \
-      org.opencontainers.image.description="Privacy-first, AI-friendly service desk" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.description="Privacy-first, AI-friendly service desk"
 
 # Unprivileged, fixed uid so that Kubernetes `runAsNonRoot` can verify it.
 RUN groupadd --system --gid 10001 zentral \

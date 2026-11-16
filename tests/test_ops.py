@@ -172,3 +172,20 @@ def test_doctor_reports_wrong_encryption_key_and_bad_config(cli_env, monkeypatch
     get_settings.cache_clear()
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1 and "✗ configuration" in result.output
+
+
+def test_generated_docs_are_current():
+    """The RBAC matrix and configuration reference in docs/ are generated from code."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(root / "scripts/gen_docs.py"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

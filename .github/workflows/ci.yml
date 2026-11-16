@@ -75,7 +75,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen --group docs
+      - run: uv sync --frozen --all-groups
+      - name: Generated reference tables are current
+        run: uv run python scripts/gen_docs.py --check
       - run: uv run mkdocs build --strict
 
   image:

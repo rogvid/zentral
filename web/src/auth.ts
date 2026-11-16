@@ -152,8 +152,21 @@ async function completeSignIn(auth: AuthConfig, discovery: Discovery): Promise<v
   });
 }
 
-/** Resolves once signed in. Redirects to the identity provider when necessary. */
-export async function startSession(config: AppConfig): Promise<Session> {
+let starting: Promise<Session> | null = null;
+
+/**
+ * Resolves once signed in. Redirects to the identity provider when necessary.
+ *
+ * Single-flight: the authorization code can be redeemed exactly once, so
+ * concurrent callers (React runs effects twice in development) must share one
+ * attempt — otherwise the second would see "no token yet" and start over.
+ */
+export function startSession(config: AppConfig): Promise<Session> {
+  starting ??= openSession(config);
+  return starting;
+}
+
+async function openSession(config: AppConfig): Promise<Session> {
   const auth = config.auth;
   const discovery = await discover(auth);
   await completeSignIn(auth, discovery);

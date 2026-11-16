@@ -1,0 +1,58 @@
+# Least-privilege networking: default deny, then only what Zentral needs.
+# Requires a CNI that enforces NetworkPolicy (Calico, Cilium, …).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Only the ingress controller may reach the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-from-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: zentral-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 8000 }
+---
+# All Zentral pods: DNS, the database, and HTTPS to the outside (identity
+# provider, Microsoft Graph). Tighten the HTTPS rule to an egress gateway or
+# FQDN policy if your CNI supports it. If you run an on-prem model in the
+# cluster, add a rule for its namespace and port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zentral-egress
+spec:
+  podSelector:
+    matchLabels:
+      zentral.dev/db-client: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - { protocol: TCP, port: 443 }

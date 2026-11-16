@@ -238,6 +238,7 @@ class Worker:
                 body=message.body,
                 recipient_email=requester.email if requester else None,
                 recipient_name=requester.display_name if requester else None,
+                thread_id=ticket.thread_ref,
             )
         )
         message.delivery_status = DeliveryStatus.SENT

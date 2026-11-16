@@ -185,6 +185,9 @@ class Ticket(Base):
         ForeignKey("ingest_sources.id", ondelete="SET NULL")
     )
     external_thread_id: Mapped[str | None] = mapped_column(String(64))  # blind index
+    # The channel's own conversation reference, kept (encrypted) so replies can
+    # be posted into the same thread.
+    thread_ref: Mapped[str | None] = mapped_column(EncryptedText)
 
     ai_category: Mapped[str | None] = mapped_column(String(64))
     ai_priority: Mapped[str | None] = mapped_column(String(16))

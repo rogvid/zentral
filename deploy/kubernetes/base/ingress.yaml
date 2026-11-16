@@ -1,0 +1,25 @@
+# TLS is terminated at the ingress. Annotations are for ingress-nginx; adapt them
+# to your controller. The body-size limit mirrors ZENTRAL_MAX_BODY_BYTES (1 MiB).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zentral
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [servicedesk.example.com]
+      secretName: zentral-tls
+  rules:
+    - host: servicedesk.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: zentral-api
+                port: { name: http }

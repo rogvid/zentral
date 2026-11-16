@@ -125,6 +125,7 @@ async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:
     ticket.requester_id = None
     ticket.requester = None
     ticket.external_thread_id = None
+    ticket.thread_ref = None
     ticket.tags = []
     ticket.scrubbed_at = utcnow()
     if ticket.status != TicketStatus.CLOSED:

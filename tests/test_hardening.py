@@ -24,6 +24,17 @@ async def test_security_headers(client, auth):
     assert "server" not in {k.lower() for k in h} or "uvicorn" not in h.get("server", "")
 
 
+async def test_not_ready_until_schema_matches(client, db):
+    from sqlalchemy import text
+
+    assert (await client.get("/readyz")).status_code == 200
+    await db.execute(text("UPDATE alembic_version SET version_num = '0001'"))
+    await db.commit()
+    r = await client.get("/readyz")
+    assert r.status_code == 503 and "schema" in r.json()["status"]
+    assert (await client.get("/healthz")).status_code == 200  # alive, just not ready
+
+
 async def test_client_cannot_choose_request_id(client, auth):
     r = await client.get("/healthz", headers={"X-Request-ID": "forged\nlog-line"})
     assert r.headers["x-request-id"] != "forged\nlog-line"

@@ -71,7 +71,7 @@ class _Verifier(TokenVerifier):
             log.warning("mcp_authentication_failed", reason=str(exc))
             return None
         return AccessToken(
-            token="",  # the raw token is not needed downstream; do not keep it around
+            token="",  # the raw token is not needed downstream; do not keep it around # nosec B106
             client_id=principal.client_app_id or principal.subject,
             scopes=[],
             subject=principal.subject,

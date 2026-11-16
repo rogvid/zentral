@@ -144,7 +144,7 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
             raise HTTPException(400, "invalid_grant")
         return {
             "access_token": issuer.issue_persona(persona),
-            "token_type": "Bearer",
+            "token_type": "Bearer",  # nosec B105
             "expires_in": 8 * 3600,
         }
 

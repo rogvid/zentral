@@ -23,6 +23,7 @@ from zentral.api.app import create_app
 from zentral.config import Settings
 from zentral.db import audit_guard
 from zentral.db.models import Base
+from zentral.doctor import expected_revision
 from zentral.runtime import Runtime, build_runtime
 from zentral.security.devauth import LocalIssuer
 from zentral.security.rbac import Role
@@ -92,6 +93,13 @@ async def runtime(settings: Settings, outbound: OutboundRecorder) -> AsyncIterat
                 await conn.execute(text(statement))
         else:
             await conn.run_sync(Base.metadata.create_all)
+    async with rt.engine.begin() as conn:
+        # create_all does not go through Alembic: record the revision by hand.
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        await conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        await conn.execute(
+            text("INSERT INTO alembic_version VALUES (:v)"), {"v": expected_revision()}
+        )
     yield rt
     await rt.aclose()
 

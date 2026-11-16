@@ -112,3 +112,63 @@ def test_generated_keys_are_usable(cli_env):
     assert (
         len(values["ZENTRAL_BLIND_INDEX_KEY"]) >= 32 and len(values["ZENTRAL_AUDIT_HMAC_KEY"]) >= 32
     )
+
+
+def test_init_then_doctor(tmp_path, monkeypatch):
+    """The documented first-run path: init → db upgrade → doctor."""
+    for name in list(__import__("os").environ):
+        if name.startswith("ZENTRAL_"):
+            monkeypatch.delenv(name)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    env_file = tmp_path / ".env"
+    result = runner.invoke(app, ["init", "--auth", "dev"])
+    assert result.exit_code == 0, result.output
+    assert oct(env_file.stat().st_mode)[-3:] == "600"
+    assert runner.invoke(app, ["init", "--auth", "dev"]).exit_code == 1  # no silent overwrite
+    text_ = env_file.read_text()
+    assert "ZENTRAL_AUTH_MODE=dev" in text_ and "ZENTRAL_ENCRYPTION_KEYS=" in text_
+
+    get_settings.cache_clear()
+    before = runner.invoke(app, ["doctor"])
+    assert before.exit_code == 1 and "zentral db upgrade" in before.output
+    assert runner.invoke(app, ["db", "upgrade"]).exit_code == 0
+    after = runner.invoke(app, ["doctor"])
+    assert after.exit_code == 0, after.output
+    assert "✓ database: sqlite, schema 0002" in after.output
+    assert "✓ audit trail" in after.output and "! identity provider" in after.output
+    # Secrets never appear in doctor output.
+    for line in text_.splitlines():
+        if "KEY" in line and "=" in line and not line.startswith("#"):
+            assert line.split("=", 1)[1] not in after.output
+    get_settings.cache_clear()
+
+
+def test_doctor_reports_wrong_encryption_key_and_bad_config(cli_env, monkeypatch):
+    runner = CliRunner()
+    assert runner.invoke(app, ["db", "upgrade"]).exit_code == 0
+    import asyncio
+
+    from zentral.db.models import Message, Ticket
+    from zentral.runtime import build_runtime
+
+    async def seed():
+        rt = build_runtime(get_settings())
+        async with rt.sessions() as session:
+            ticket = Ticket(subject="s", channel="manual", tags=[])
+            session.add(ticket)
+            await session.flush()
+            session.add(Message(ticket_id=ticket.id, kind="note", body="b"))
+            await session.commit()
+        await rt.aclose()
+
+    asyncio.run(seed())
+    cli_env["set"]("ZENTRAL_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 1 and "cannot decrypt existing data" in result.output
+
+    cli_env["set"]("ZENTRAL_AUDIT_HMAC_KEY", "short")
+    get_settings.cache_clear()
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 1 and "✗ configuration" in result.output

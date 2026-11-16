@@ -1,0 +1,42 @@
+# Applies database migrations. Runs to completion before each rollout; the api
+# pods do not become ready until the schema matches their version (/readyz
+# checks the revision), so a rollout simply waits for this Job.
+#
+# Job specs are immutable: delete the old Job (or use a generated name / a Helm
+# or Argo CD hook) when rolling out a new version.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: zentral-migrate
+  labels:
+    app.kubernetes.io/name: zentral-migrate
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zentral-migrate
+        zentral.dev/db-client: "true"
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: zentral
+          args: ["db", "upgrade"]
+          envFrom:
+            - configMapRef: { name: zentral-config }
+            - secretRef: { name: zentral-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }

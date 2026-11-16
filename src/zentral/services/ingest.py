@@ -76,6 +76,7 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             requester_id=contact.id if contact else None,
             source_id=source.id,
             external_thread_id=thread_hash,
+            thread_ref=msg.thread_id[:500] if msg.thread_id else None,
             tags=[],
         )
         system = await _resolve_system(ctx, source, msg)

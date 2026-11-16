@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -9,9 +10,15 @@ from sqlalchemy import text
 from zentral.api.deps import CtxDep, RuntimeDep
 from zentral.api.routes.devidp import CLIENT_ID as DEV_CLIENT_ID
 from zentral.config import Settings
+from zentral.doctor import expected_revision
 from zentral.schemas import MeOut
 
 router = APIRouter(tags=["meta"])
+
+
+@lru_cache
+def _expected_revision() -> str:
+    return expected_revision()
 
 
 def sign_in_scopes(s: Settings) -> list[str]:
@@ -39,12 +46,17 @@ async def healthz() -> dict[str, str]:
 
 @router.get("/readyz", include_in_schema=False)
 async def readyz(rt: RuntimeDep, response: Response) -> dict[str, str]:
+    """Ready means: the database answers *and* its schema is the one this version expects.
+    During a rollout, new pods therefore wait for the migration to finish."""
     try:
         async with rt.sessions() as session:
-            await session.execute(text("SELECT 1"))
+            current = await session.scalar(text("SELECT version_num FROM alembic_version"))
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"status": "database unavailable"}
+        return {"status": "database unavailable or not migrated"}
+    if current != _expected_revision():
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "database schema does not match this version"}
     return {"status": "ready"}
 
 

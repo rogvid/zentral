@@ -80,6 +80,7 @@ ignore = ["S101"]
 "tests/**" = ["S105", "S106", "S311", "S608", "E501", "PT018", "PT011", "SLF001", "RUF001", "RUF003"]
 "src/zentral/api/**" = ["B008"]
 "src/zentral/cli.py" = ["B008"]
+"scripts/**" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -90,3 +91,9 @@ files = ["src"]
 [tool.coverage.run]
 source = ["src/zentral"]
 branch = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+# B101: asserts are not used for control flow in src. B608 is reviewed per call site
+# (identifiers come from compile-time constants, never from input).
+skips = ["B101"]

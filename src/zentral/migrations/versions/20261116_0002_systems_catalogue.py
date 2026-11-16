@@ -1,4 +1,4 @@
-"""systems catalogue
+"""systems catalogue, reply thread reference
 
 Revision ID: 0002
 Revises: 0001
@@ -45,6 +45,7 @@ def upgrade() -> None:
     with op.batch_alter_table("tickets") as batch:
         batch.add_column(sa.Column("system_id", sa.Uuid(), nullable=True))
         batch.add_column(sa.Column("ai_system_key", sa.String(length=64), nullable=True))
+        batch.add_column(sa.Column("thread_ref", zentral.db.types.EncryptedText(), nullable=True))
         batch.create_index("ix_tickets_system_id", ["system_id"])
         batch.create_foreign_key(
             "fk_tickets_system", "systems", ["system_id"], ["id"], ondelete="SET NULL"
@@ -55,6 +56,7 @@ def downgrade() -> None:
     with op.batch_alter_table("tickets") as batch:
         batch.drop_constraint("fk_tickets_system", type_="foreignkey")
         batch.drop_index("ix_tickets_system_id")
+        batch.drop_column("thread_ref")
         batch.drop_column("ai_system_key")
         batch.drop_column("system_id")
     with op.batch_alter_table("ingest_sources") as batch:

@@ -79,7 +79,7 @@ def generate_key() -> str:
 
 # --- opaque bearer tokens for ingest sources ---------------------------------
 
-INGEST_TOKEN_PREFIX = "zis_"  # noqa: S105 - a prefix, not a secret
+INGEST_TOKEN_PREFIX = "zis_"  # noqa: S105 - a prefix, not a secret # nosec B105
 
 
 def new_ingest_token() -> tuple[str, str]:

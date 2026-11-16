@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useApp, useLoad } from "../context";
 import { query, relativeTime, titleCase } from "../lib";
 import type { Priority, SystemInfo, Team, TicketPage } from "../types";
-import { Chip, Dialog, Empty, ErrorState, Field, PageHead, PriorityMark, Spinner, StatusBadge } from "../ui";
+import { BoxIcon, ChannelIcon, FlameIcon, InboxIcon, PlusIcon, SparkIcon, UserIcon } from "../icons";
+import { Chip, Dialog, Empty, ErrorState, Field, PageHead, PriorityMark, SkeletonRows, Stat, StatusBadge } from "../ui";
 
 type View = "active" | "mine" | "unassigned" | "all";
+type Stats = { active: number; new: number; unassigned: number; mine: number; urgent: number; no_system: number };
 const VIEWS: { id: View; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "mine", label: "Assigned to me" },
@@ -132,6 +134,21 @@ export function InboxPage() {
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
   const [system, setSystem] = useState("");
+  const [urgentOnly, setUrgentOnly] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to search, like most tools people already use.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -150,11 +167,20 @@ export function InboxPage() {
       offset,
       assignee_id: view === "mine" ? me.subject : undefined,
       unassigned: view === "unassigned",
+      priority: urgentOnly ? "urgent" : undefined,
       system_id: system && system !== "none" ? system : undefined,
       no_system: system === "none",
     });
     return api.get<TicketPage>(`/tickets${base}${view === "all" ? "" : ACTIVE}`);
-  }, [view, term, offset, system]);
+  }, [view, term, offset, system, urgentOnly]);
+  const stats = useLoad(() => api.get<Stats>("/tickets/stats"), [page.data]);
+
+  function show(next: View, opts: { urgent?: boolean; system?: string } = {}) {
+    setView(next);
+    setUrgentOnly(opts.urgent ?? false);
+    setSystem(opts.system ?? "");
+    setOffset(0);
+  }
 
   const data = page.data;
   return (
@@ -165,11 +191,24 @@ export function InboxPage() {
         actions={
           can("ticket:create") && (
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              <PlusIcon />
               New ticket
             </button>
           )
         }
       />
+      <div className="stats">
+        <Stat label="Active" value={stats.data?.active} icon={<InboxIcon size={18} />} tone="accent"
+          active={view === "active" && !urgentOnly && !system} onClick={() => show("active")} />
+        <Stat label="Urgent" value={stats.data?.urgent} icon={<FlameIcon size={18} />} tone="danger"
+          active={urgentOnly} onClick={() => show("active", { urgent: true })} />
+        <Stat label="Unassigned" value={stats.data?.unassigned} icon={<UserIcon size={18} />} tone="warn"
+          active={view === "unassigned"} onClick={() => show("unassigned")} />
+        <Stat label="Assigned to me" value={stats.data?.mine} icon={<SparkIcon size={18} />} tone="ok"
+          active={view === "mine"} onClick={() => show("mine")} />
+        <Stat label="No system yet" value={stats.data?.no_system} icon={<BoxIcon size={18} />} tone="neutral"
+          active={system === "none"} onClick={() => show("active", { system: "none" })} />
+      </div>
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {VIEWS.map((v) => (
@@ -178,10 +217,7 @@ export function InboxPage() {
               role="tab"
               aria-selected={view === v.id}
               className={`tab${view === v.id ? " tab-active" : ""}`}
-              onClick={() => {
-                setView(v.id);
-                setOffset(0);
-              }}
+              onClick={() => show(v.id, { system })}
             >
               {v.label}
             </button>
@@ -204,9 +240,10 @@ export function InboxPage() {
           <option value="none">No system yet</option>
         </select>
         <input
+          ref={searchRef}
           className="search"
           type="search"
-          placeholder="Search subject or ticket key"
+          placeholder="Search subject or ticket key   /"
           aria-label="Search tickets"
           value={search}
           maxLength={200}
@@ -217,7 +254,7 @@ export function InboxPage() {
       {page.error ? (
         <ErrorState message={page.error} retry={page.reload} />
       ) : !data ? (
-        <Spinner />
+        <SkeletonRows />
       ) : data.items.length === 0 ? (
         <Empty title="Nothing here" hint={term ? "No ticket matches your search." : "You are all caught up."} />
       ) : (
@@ -237,14 +274,15 @@ export function InboxPage() {
             </thead>
             <tbody>
               {data.items.map((t) => (
-                <tr key={t.id} onClick={() => (window.location.hash = `#/tickets/${t.id}`)}>
+                <tr key={t.id} className={`row-${t.priority}`} onClick={() => (window.location.hash = `#/tickets/${t.id}`)}>
                   <td className="cell-main">
                     <a href={`#/tickets/${t.id}`} onClick={(e) => e.stopPropagation()}>
                       <span className="ticket-key">{t.key}</span>
                       <span className="ticket-subject">{t.subject}</span>
                     </a>
                     <span className="cell-sub">
-                      {t.requester ? t.requester.display_name : "Internal"} · via {titleCase(t.channel)}
+                      <ChannelIcon channel={t.channel} />
+                      {t.requester ? t.requester.display_name : "Internal"} · {titleCase(t.channel)}
                     </span>
                   </td>
                   <td>

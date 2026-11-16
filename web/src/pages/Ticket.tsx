@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp, useLoad } from "../context";
 import { percent, relativeTime, titleCase } from "../lib";
 import type { Message, Priority, Status, SystemInfo, Team, Ticket, User } from "../types";
+import { ChannelIcon, SparkIcon } from "../icons";
 import { Avatar, Chip, ErrorState, Field, PriorityMark, Spinner, StatusBadge } from "../ui";
 
 const STATUSES: Status[] = ["new", "open", "pending", "resolved", "closed"];
@@ -130,7 +131,8 @@ export function TicketPage({ id }: { id: number }) {
             <StatusBadge status={t.status} />
             <PriorityMark priority={t.priority} />
             {t.system_name ? <Chip tone="system">{t.system_name}</Chip> : <Chip tone="note">No system</Chip>}
-            <span className="muted">
+            <span className="muted meta-inline">
+              <ChannelIcon channel={t.channel} />
               opened {relativeTime(t.created_at)} via {titleCase(t.channel)}
             </span>
           </div>
@@ -243,7 +245,9 @@ export function TicketPage({ id }: { id: number }) {
 
         {t.ai_category && (
           <div className="card panel panel-ai">
-            <h2>AI triage</h2>
+            <h2>
+              <SparkIcon /> AI triage
+            </h2>
             {t.ai_summary && <p>{t.ai_summary}</p>}
             <dl className="facts">
               <dt>Suggested category</dt>
@@ -253,7 +257,10 @@ export function TicketPage({ id }: { id: number }) {
               <dt>Suggested system</dt>
               <dd>{t.ai_system_key ?? "–"}</dd>
               <dt>Confidence</dt>
-              <dd>{percent(t.ai_confidence)}</dd>
+              <dd className="confidence">
+                <meter min={0} max={1} low={0.4} high={0.75} optimum={1} value={t.ai_confidence ?? 0} />
+                {percent(t.ai_confidence)}
+              </dd>
             </dl>
             {suggestion && editable && (
               <button className="btn btn-block" onClick={() => void update({ category: suggestion })}>

@@ -38,6 +38,13 @@ export function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
+/** Stable colour slot (0–5) for a name, so the same person always gets the same avatar colour. */
+export function hue(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return hash % 6;
+}
+
 export function percent(value: number | null): string {
   return value === null ? "–" : `${Math.round(value * 100)}%`;
 }

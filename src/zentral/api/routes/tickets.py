@@ -66,6 +66,11 @@ async def create_ticket(ctx: CtxDep, data: TicketCreate) -> TicketOut:
     return ticket
 
 
+@router.get("/stats")
+async def ticket_stats(ctx: CtxDep) -> dict[str, int]:
+    return await tickets.ticket_stats(ctx)
+
+
 @router.get("/{ticket_id}")
 async def get_ticket(ctx: CtxDep, ticket_id: int) -> TicketOut:
     ticket = await tickets.get_ticket(ctx, ticket_id)

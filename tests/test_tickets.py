@@ -169,3 +169,29 @@ async def test_reads_are_audited_without_content(client, auth):
     everything = str(await audit_events(client, auth, limit=200))
     for secret in ("jane@example.com", "12 34 56 78", "locked out", "Printer"):
         assert secret not in everything
+
+
+async def test_stats_respect_scope(client, auth):
+    team = await make_team(client, auth, "Support", ["agent"])
+    other = await make_team(client, auth, "HR")
+    await make_ticket(client, auth, team_id=team, priority="urgent")
+    mine = await make_ticket(client, auth, team_id=team)
+    await make_ticket(client, auth, team_id=other, priority="urgent")
+    closed = await make_ticket(client, auth, team_id=team)
+    await client.patch(
+        f"/api/v1/tickets/{closed['id']}", headers=auth("admin"), json={"status": "closed"}
+    )
+    await client.get("/api/v1/me", headers=auth("agent"))
+    await client.patch(
+        f"/api/v1/tickets/{mine['id']}",
+        headers=auth("agent"),
+        json={"assignee_id": SUBJECTS["agent"]},
+    )
+
+    agent = (await client.get("/api/v1/tickets/stats", headers=auth("agent"))).json()
+    assert agent == {"active": 2, "new": 1, "unassigned": 1, "mine": 1, "urgent": 1, "no_system": 2}
+    admin = (await client.get("/api/v1/tickets/stats", headers=auth("admin"))).json()
+    assert (admin["active"], admin["urgent"], admin["mine"]) == (3, 2, 0)
+    empty = (await client.get("/api/v1/tickets/stats", headers=auth("viewer"))).json()
+    assert set(empty.values()) == {0}
+    assert (await client.get("/api/v1/tickets/stats", headers=auth("auditor"))).status_code == 403

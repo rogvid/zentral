@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Api } from "./api";
 import { loadConfig, startSession, type Session } from "./auth";
 import { AppContext, type AppState } from "./context";
+import { InboxIcon, LockIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, ShieldIcon, SunIcon } from "./icons";
 import { parseRoute, type Route } from "./lib";
+import { useTheme } from "./theme";
 import { AdminPage } from "./pages/Admin";
 import { AuditPage } from "./pages/Audit";
 import { InboxPage } from "./pages/Inbox";
@@ -32,14 +34,15 @@ function useRoute(): Route {
   return route;
 }
 
-const NAV: { page: Route["page"]; href: string; label: string; needs: string[] }[] = [
-  { page: "inbox", href: "#/", label: "Inbox", needs: ["ticket:read"] },
-  { page: "audit", href: "#/audit", label: "Audit trail", needs: ["audit:read"] },
-  { page: "privacy", href: "#/privacy", label: "Privacy requests", needs: ["privacy:export"] },
+const NAV: { page: Route["page"]; href: string; label: string; icon: ReactNode; needs: string[] }[] = [
+  { page: "inbox", href: "#/", label: "Inbox", icon: <InboxIcon />, needs: ["ticket:read"] },
+  { page: "audit", href: "#/audit", label: "Audit trail", icon: <ShieldIcon />, needs: ["audit:read"] },
+  { page: "privacy", href: "#/privacy", label: "Privacy requests", icon: <LockIcon />, needs: ["privacy:export"] },
   {
     page: "admin",
     href: "#/admin",
     label: "Administration",
+    icon: <SettingsIcon />,
     needs: ["team:manage", "system:manage", "source:manage", "rule:manage"],
   },
 ];
@@ -48,6 +51,7 @@ export function App() {
   const [boot, setBoot] = useState<Boot>({ phase: "loading" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const route = useRoute();
+  const [theme, cycleTheme] = useTheme();
 
   useEffect(() => {
     (async () => {
@@ -102,6 +106,7 @@ export function App() {
                 className={`nav-link${active === item.page ? " nav-active" : ""}`}
                 aria-current={active === item.page ? "page" : undefined}
               >
+                {item.icon}
                 {item.label}
               </a>
             ))}
@@ -114,9 +119,16 @@ export function App() {
                 <span>{state.me.roles.map((r) => r.replace("Zentral.", "")).join(", ") || "No role"}</span>
               </div>
             </div>
-            <button className="btn btn-quiet btn-block" onClick={() => void boot.session.signOut()}>
-              Sign out
-            </button>
+            <div className="sidebar-actions">
+              <button className="btn btn-quiet" onClick={cycleTheme} title="Switch theme" aria-label={`Theme: ${theme}. Switch theme`}>
+                {theme === "dark" ? <MoonIcon /> : theme === "light" ? <SunIcon /> : <MonitorIcon />}
+                <span className="theme-label">{theme === "system" ? "Auto" : theme === "dark" ? "Dark" : "Light"}</span>
+              </button>
+              <button className="btn btn-quiet" onClick={() => void boot.session.signOut()}>
+                <LogOutIcon />
+                Sign out
+              </button>
+            </div>
           </div>
         </aside>
         <main className="main">

@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, false, func, or_, select, true
+from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true
 
 from zentral.db.models import (
     Contact,
@@ -234,6 +234,32 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
     return TicketPage(
         items=[_present(ctx, t, names) for t in rows], total=total, limit=limit, offset=offset
     )
+
+
+ACTIVE_STATUSES = (TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.PENDING)
+
+
+async def ticket_stats(ctx: Ctx) -> dict[str, int]:
+    """Counts of active tickets in the caller's scope, for the inbox overview.
+    Aggregates only — no ticket content — so this is not written to the audit trail."""
+    ctx.require(P.TICKET_READ, "ticket")
+
+    def count_if(condition: ColumnElement[bool]) -> ColumnElement[int]:
+        return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+    row = (
+        await ctx.session.execute(
+            select(
+                func.count().label("active"),
+                count_if(Ticket.status == TicketStatus.NEW).label("new"),
+                count_if(Ticket.assignee_id.is_(None)).label("unassigned"),
+                count_if(Ticket.assignee_id == ctx.principal.subject).label("mine"),
+                count_if(Ticket.priority == "urgent").label("urgent"),
+                count_if(Ticket.system_id.is_(None)).label("no_system"),
+            ).where(visible_clause(ctx), Ticket.status.in_(ACTIVE_STATUSES))
+        )
+    ).one()
+    return {key: int(value) for key, value in row._mapping.items()}
 
 
 async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:

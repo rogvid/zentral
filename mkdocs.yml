@@ -1,0 +1,94 @@
+site_name: Zentral
+site_description: A privacy-first, AI-friendly service desk
+repo_url: https://github.com/rogvid/zentral
+edit_uri: edit/main/docs/
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle: { icon: material/weather-sunny, name: Light mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed: { alternate_style: true }
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Design principles: design-principles.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Data model: architecture/data-model.md
+      - Security architecture: architecture/security.md
+      - Threat model: architecture/threat-model.md
+      - AI pipeline: architecture/ai.md
+      - Decision records: architecture/decisions.md
+  - User guides:
+      - Working tickets (agents): guides/agents.md
+      - Administration: guides/administration.md
+      - Systems catalogue: guides/systems.md
+      - Privacy requests: guides/privacy-officer.md
+      - Auditing: guides/auditor.md
+      - AI agents over MCP: guides/mcp.md
+      - REST API: guides/api.md
+      - Channels:
+          - E-mail (Microsoft 365): guides/connectors/email.md
+          - Microsoft Teams: guides/connectors/teams.md
+          - Webhook (services): guides/connectors/webhook.md
+  - Extending:
+      - Write a connector: extending/connectors.md
+      - Add an AI provider: extending/ai-providers.md
+      - Custom authentication: extending/authentication.md
+  - Operations:
+      - Deployment overview: operations/deployment.md
+      - Deploy with Docker Compose: operations/deploy-compose.md
+      - Deploy on Kubernetes: operations/deploy-kubernetes.md
+      - Identity — Microsoft Entra ID: operations/identity-entra.md
+      - Identity — other OIDC providers: operations/identity-oidc.md
+      - Configuration reference: operations/configuration.md
+      - Monitoring and logs: operations/monitoring.md
+  - Runbooks:
+      - Index: runbooks/index.md
+      - First deployment: runbooks/first-deployment.md
+      - Upgrade: runbooks/upgrade.md
+      - Backup and restore: runbooks/backup-restore.md
+      - Rotate keys and secrets: runbooks/key-rotation.md
+      - Verify the audit trail: runbooks/audit-verification.md
+      - Security incident: runbooks/security-incident.md
+      - Data-subject request: runbooks/data-subject-request.md
+      - Switch to on-prem AI: runbooks/switch-to-on-prem-ai.md
+      - Access review: runbooks/access-review.md
+      - Troubleshooting: runbooks/troubleshooting.md
+  - Compliance:
+      - GDPR: compliance/gdpr.md
+      - Roles and permissions: compliance/rbac.md
+      - Logging and audit: compliance/logging.md
+      - Security posture: compliance/security-posture.md
+  - Development:
+      - Local setup: development/setup.md
+      - Testing: development/testing.md
+      - Contributing: development/contributing.md

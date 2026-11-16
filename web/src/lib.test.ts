@@ -52,3 +52,19 @@ describe("PKCE helpers", () => {
     expect(a).not.toBe(randomToken(48));
   });
 });
+
+import { hue } from "./lib";
+import { nextTheme } from "./theme";
+
+describe("visual helpers", () => {
+  it("gives a name a stable colour slot", () => {
+    expect(hue("Jane Doe")).toBe(hue("Jane Doe"));
+    expect(hue("Jane Doe")).toBeGreaterThanOrEqual(0);
+    expect(hue("Jane Doe")).toBeLessThan(6);
+  });
+  it("cycles themes system → light → dark → system", () => {
+    expect(nextTheme("system")).toBe("light");
+    expect(nextTheme("light")).toBe("dark");
+    expect(nextTheme("dark")).toBe("system");
+  });
+});

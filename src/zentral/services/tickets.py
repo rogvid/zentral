@@ -14,6 +14,7 @@ from zentral.db.models import (
     Job,
     Message,
     MessageKind,
+    System,
     Team,
     Ticket,
     TicketStatus,
@@ -48,6 +49,8 @@ class TicketFilter:
     category: str | None = None
     team_id: uuid.UUID | None = None
     assignee_id: str | None = None
+    system_id: uuid.UUID | None = None
+    no_system: bool = False
     unassigned: bool = False
     requester_email: str | None = None
     q: str | None = None
@@ -141,9 +144,13 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         team_name=ticket.team.name if ticket.team else None,
         assignee_id=ticket.assignee_id,
         assignee_name=names.get(ticket.assignee_id) if ticket.assignee_id else None,
+        system_id=ticket.system_id,
+        system_key=ticket.system.key if ticket.system else None,
+        system_name=ticket.system.name if ticket.system else None,
         requester=requester,
         ai_category=ticket.ai_category,
         ai_priority=ticket.ai_priority,
+        ai_system_key=ticket.ai_system_key,
         ai_confidence=ticket.ai_confidence,
         ai_summary=ticket.ai_summary,
         created_at=ticket.created_at,
@@ -182,6 +189,10 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
         where.append(Ticket.team_id == f.team_id)
     if f.assignee_id:
         where.append(Ticket.assignee_id == f.assignee_id)
+    if f.system_id:
+        where.append(Ticket.system_id == f.system_id)
+    if f.no_system:
+        where.append(Ticket.system_id.is_(None))
     if f.unassigned:
         where.append(Ticket.assignee_id.is_(None))
     if f.requester_email:
@@ -272,6 +283,21 @@ async def _check_team(ctx: Ctx, team_id: uuid.UUID | None) -> None:
         raise ValidationFailed("unknown team")
 
 
+async def load_system(ctx: Ctx, system_id: uuid.UUID) -> System:
+    system = await ctx.session.get(System, system_id)
+    if system is None or not system.active:
+        raise ValidationFailed("unknown or inactive system")
+    return system
+
+
+def apply_system(ticket: Ticket, system: System) -> None:
+    """Link a ticket to a system; the system's team takes it if nobody has yet."""
+    ticket.system_id = system.id
+    ticket.system = system
+    if ticket.team_id is None and system.default_team_id is not None:
+        ticket.team_id = system.default_team_id
+
+
 async def get_or_create_contact(
     ctx: Ctx, kind: str, identifier: str, *, email: str | None, name: str | None
 ) -> Contact:
@@ -310,6 +336,8 @@ async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
         requester_id=requester.id if requester else None,
     )
     ticket.requester = requester
+    if data.system_id is not None:
+        apply_system(ticket, await load_system(ctx, data.system_id))
     ctx.session.add(ticket)
     await ctx.session.flush()
     ctx.session.add(
@@ -323,7 +351,7 @@ async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
     )
     ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
     ctx.audit("ticket.created", "ticket", ticket.id, channel=ticket.channel)
-    await ctx.session.refresh(ticket, ["team"])
+    await ctx.session.refresh(ticket, ["team", "system"])
     return await present_ticket(ctx, ticket)
 
 
@@ -332,7 +360,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     fields = patch.model_fields_set
     changed: dict[str, Any] = {}
 
-    if fields & {"status", "priority", "category", "tags"}:
+    if fields & {"status", "priority", "category", "tags", "system_id"}:
         ctx.require(P.TICKET_UPDATE, "ticket", str(ticket_id))
     if "team_id" in fields and not ctx.can(P.TICKET_ASSIGN):
         # Routing to a team is allowed with ticket:update; picking a person is not.
@@ -340,7 +368,16 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     if "assignee_id" in fields:
         ctx.require(P.TICKET_ASSIGN, "ticket", str(ticket_id))
 
+    if "system_id" in fields and patch.system_id != ticket.system_id:
+        changed["system_id"] = [str(ticket.system_id or ""), str(patch.system_id or "")]
+        if patch.system_id is None:
+            ticket.system_id, ticket.system = None, None
+        else:
+            apply_system(ticket, await load_system(ctx, patch.system_id))
     if "status" in fields and patch.status is not None and patch.status != ticket.status:
+        closing = patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+        if closing and ctx.settings.require_system_to_resolve and ticket.system_id is None:
+            raise ValidationFailed("select the system this ticket concerns before resolving it")
         changed["status"] = [ticket.status, patch.status.value]
         ticket.status = patch.status
         if patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
@@ -377,7 +414,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
         ticket.updated_at = utcnow()
         ctx.audit("ticket.updated", "ticket", ticket.id, changes=changed)
         await ctx.session.flush()
-        await ctx.session.refresh(ticket, ["team"])
+        await ctx.session.refresh(ticket, ["team", "system"])
     return await present_ticket(ctx, ticket)
 
 

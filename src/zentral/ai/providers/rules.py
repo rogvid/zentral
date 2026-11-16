@@ -69,12 +69,35 @@ class RulesProvider(AIProvider):
             priority = "urgent"
         elif any(word in text for word in _HIGH):
             priority = "high"
+        system = _match_system(text, inp)
         if best is None or scores[best] == 0:
             fallback = "other" if "other" in inp.categories else inp.categories[0]
-            return Classification(category=fallback, priority=priority, summary="", confidence=0.2)
+            return Classification(
+                category=fallback, priority=priority, summary="", confidence=0.2, system=system
+            )
         return Classification(
             category=best,
             priority=priority,
             summary="",
             confidence=min(0.9, 0.6 + 0.1 * scores[best]),
+            system=system,
         )
+
+
+def _match_system(text: str, inp: ClassificationInput) -> str:
+    """A system matches when its key, name or one of its keywords occurs as a word.
+    Ambiguous matches (two systems tie) yield no suggestion."""
+    hits: dict[str, int] = {}
+    for system in inp.systems:
+        terms = {system.key, system.name, *system.keywords}
+        count = sum(
+            len(re.findall(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", text))
+            for term in terms
+            if term
+        )
+        if count:
+            hits[system.key] = count
+    ranked = sorted(hits.items(), key=lambda kv: kv[1], reverse=True)
+    if not ranked or (len(ranked) > 1 and ranked[0][1] == ranked[1][1]):
+        return ""
+    return ranked[0][0]

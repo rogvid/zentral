@@ -43,6 +43,7 @@ class WebhookPayload(BaseModel):
     description: str = Field(default="", max_length=100_000)
     external_id: str | None = Field(default=None, min_length=1, max_length=200)
     thread_key: str | None = Field(default=None, min_length=1, max_length=200)
+    system: str | None = Field(default=None, min_length=1, max_length=64)
     severity: Literal["critical", "urgent", "high", "warning", "normal", "info", "low"] = "normal"
     requester_email: Email | None = None
     requester_name: str | None = Field(default=None, max_length=200)
@@ -81,5 +82,6 @@ class WebhookConnector(Connector):
             sender_name=payload.requester_name,
             thread_id=payload.thread_key,
             priority=_SEVERITY_TO_PRIORITY[payload.severity],
+            system=payload.system,
         )
         return WebhookResult(messages=[message], response={"tickets": "{ticket_keys}"})

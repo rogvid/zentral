@@ -52,7 +52,7 @@ class ClaudeCliProvider(AIProvider):
                 "",
                 "--no-session-persistence",
                 "--system-prompt",
-                system_prompt(inp.categories),
+                system_prompt(inp.categories, inp.systems),
                 "--json-schema",
                 json.dumps(CLASSIFICATION_SCHEMA),
                 stdin=asyncio.subprocess.PIPE,

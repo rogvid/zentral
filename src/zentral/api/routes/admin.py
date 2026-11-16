@@ -13,6 +13,8 @@ from zentral.schemas import (
     SourceIn,
     SourceOut,
     SourceUpdate,
+    SystemIn,
+    SystemOut,
     TeamIn,
     TeamMemberIn,
     TeamOut,
@@ -52,6 +54,31 @@ async def add_member(ctx: CtxDep, team_id: uuid.UUID, data: TeamMemberIn) -> Tea
 @router.delete("/teams/{team_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(ctx: CtxDep, team_id: uuid.UUID, user_id: str) -> None:
     await admin.remove_member(ctx, team_id, user_id)
+    await ctx.commit()
+
+
+@router.get("/systems")
+async def list_systems(ctx: CtxDep, include_inactive: bool = False) -> list[SystemOut]:
+    return await admin.list_systems(ctx, include_inactive=include_inactive)
+
+
+@router.post("/systems", status_code=status.HTTP_201_CREATED)
+async def create_system(ctx: CtxDep, data: SystemIn) -> SystemOut:
+    system = await admin.create_system(ctx, data)
+    await ctx.commit()
+    return system
+
+
+@router.put("/systems/{system_id}")
+async def update_system(ctx: CtxDep, system_id: uuid.UUID, data: SystemIn) -> SystemOut:
+    system = await admin.update_system(ctx, system_id, data)
+    await ctx.commit()
+    return system
+
+
+@router.delete("/systems/{system_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_system(ctx: CtxDep, system_id: uuid.UUID) -> None:
+    await admin.delete_system(ctx, system_id)
     await ctx.commit()
 
 

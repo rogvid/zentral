@@ -60,9 +60,13 @@ class TicketOut(Out):
     team_name: str | None
     assignee_id: str | None
     assignee_name: str | None
+    system_id: uuid.UUID | None
+    system_key: str | None
+    system_name: str | None
     requester: RequesterOut | None
     ai_category: str | None
     ai_priority: str | None
+    ai_system_key: str | None
     ai_confidence: float | None
     ai_summary: str | None
     created_at: datetime
@@ -96,6 +100,7 @@ class TicketCreate(In):
     priority: TicketPriority = TicketPriority.NORMAL
     category: str | None = Field(default=None, max_length=64)
     team_id: uuid.UUID | None = None
+    system_id: uuid.UUID | None = None
     tags: list[Tag] = Field(default_factory=list, max_length=20)
 
 
@@ -105,6 +110,7 @@ class TicketUpdate(In):
     category: str | None = Field(default=None, max_length=64)
     tags: list[Tag] | None = Field(default=None, max_length=20)
     team_id: uuid.UUID | None = None
+    system_id: uuid.UUID | None = None
     assignee_id: str | None = Field(default=None, max_length=64)
 
 
@@ -128,6 +134,30 @@ class TeamOut(Out):
     member_ids: list[str] = Field(default_factory=list)
 
 
+SystemKey = Annotated[
+    str, StringConstraints(strip_whitespace=True, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+]
+
+
+class SystemIn(In):
+    key: SystemKey
+    name: Short
+    description: Annotated[str, StringConstraints(max_length=500)] = ""
+    keywords: list[Short] = Field(default_factory=list, max_length=30)
+    default_team_id: uuid.UUID | None = None
+    active: bool = True
+
+
+class SystemOut(Out):
+    id: uuid.UUID
+    key: str
+    name: str
+    description: str
+    keywords: list[str]
+    default_team_id: uuid.UUID | None
+    active: bool
+
+
 class TeamMemberIn(In):
     user_id: str = Field(min_length=1, max_length=64)
 
@@ -145,6 +175,7 @@ class SourceIn(In):
     config: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, str] = Field(default_factory=dict)
     default_team_id: uuid.UUID | None = None
+    default_system_id: uuid.UUID | None = None
     enabled: bool = True
 
 
@@ -152,6 +183,7 @@ class SourceUpdate(In):
     config: dict[str, Any] | None = None
     secrets: dict[str, str] | None = None
     default_team_id: uuid.UUID | None = None
+    default_system_id: uuid.UUID | None = None
     enabled: bool | None = None
 
 
@@ -161,6 +193,7 @@ class SourceOut(Out):
     connector: str
     config: dict[str, Any]
     default_team_id: uuid.UUID | None
+    default_system_id: uuid.UUID | None
     enabled: bool
     has_secrets: bool
     has_token: bool
@@ -178,11 +211,13 @@ class RuleConditions(In):
     category: str | None = Field(default=None, max_length=64)
     priority: TicketPriority | None = None
     source_id: uuid.UUID | None = None
+    system_id: uuid.UUID | None = None
     subject_contains: list[Short] = Field(default_factory=list, max_length=20)
 
 
 class RuleActions(In):
     set_team_id: uuid.UUID | None = None
+    set_system_id: uuid.UUID | None = None
     set_priority: TicketPriority | None = None
     set_assignee_id: str | None = Field(default=None, max_length=64)
     add_tags: list[Tag] = Field(default_factory=list, max_length=10)

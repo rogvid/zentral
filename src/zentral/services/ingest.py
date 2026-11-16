@@ -18,6 +18,7 @@ from zentral.db.models import (
     Job,
     Message,
     MessageKind,
+    System,
     Ticket,
     TicketPriority,
     TicketStatus,
@@ -25,7 +26,7 @@ from zentral.db.models import (
 )
 from zentral.security.crypto import get_cipher
 from zentral.services.context import Ctx
-from zentral.services.tickets import get_or_create_contact, ticket_key
+from zentral.services.tickets import apply_system, get_or_create_contact, ticket_key
 from zentral.text import clean_text, single_line
 
 
@@ -77,6 +78,9 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             external_thread_id=thread_hash,
             tags=[],
         )
+        system = await _resolve_system(ctx, source, msg)
+        if system is not None:
+            apply_system(ticket, system)
         ctx.session.add(ticket)
         await ctx.session.flush()
     else:
@@ -120,6 +124,21 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
         connector=source.connector,
     )
     return IngestOutcome(ticket.id, ticket_key(ctx, ticket.id), created=created)
+
+
+async def _resolve_system(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> System | None:
+    """The sender's explicit hint wins; otherwise the channel's configured default."""
+    if msg.system:
+        system = await ctx.session.scalar(
+            select(System).where(System.key == msg.system.strip().lower(), System.active.is_(True))
+        )
+        if system is not None:
+            return system
+    if source.default_system_id is not None:
+        system = await ctx.session.get(System, source.default_system_id)
+        if system is not None and system.active:
+            return system
+    return None
 
 
 async def _find_thread(

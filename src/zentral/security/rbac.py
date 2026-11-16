@@ -29,6 +29,7 @@ class Permission(StrEnum):
     TICKET_REPLY = "ticket:reply"
     TICKET_NOTE = "ticket:note"
     TEAM_MANAGE = "team:manage"
+    SYSTEM_MANAGE = "system:manage"
     SOURCE_MANAGE = "source:manage"
     RULE_MANAGE = "rule:manage"
     AUDIT_READ = "audit:read"
@@ -66,6 +67,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.TICKET_REPLY,
             P.TICKET_NOTE,
             P.TEAM_MANAGE,
+            P.SYSTEM_MANAGE,
             P.SOURCE_MANAGE,
             P.RULE_MANAGE,
             P.AUDIT_READ,

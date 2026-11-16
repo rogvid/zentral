@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from zentral.connectors.base import Capability
 from zentral.connectors.registry import ConnectorRegistry
-from zentral.db.models import AutomationRule, IngestSource, Team, TeamMember, User
+from zentral.db.models import AutomationRule, IngestSource, System, Team, TeamMember, User
 from zentral.schemas import (
     RuleIn,
     RuleOut,
@@ -19,6 +19,8 @@ from zentral.schemas import (
     SourceIn,
     SourceOut,
     SourceUpdate,
+    SystemIn,
+    SystemOut,
     TeamIn,
     TeamOut,
     UserOut,
@@ -107,6 +109,64 @@ async def list_users(ctx: Ctx) -> list[UserOut]:
     return [UserOut.model_validate(u) for u in users]
 
 
+# --- systems ------------------------------------------------------------------------
+
+
+async def list_systems(ctx: Ctx, *, include_inactive: bool = False) -> list[SystemOut]:
+    """The system catalogue is needed by anyone who works with tickets."""
+    if not (ctx.can(P.TICKET_READ) or ctx.can(P.SYSTEM_MANAGE)):
+        raise PermissionDenied(P.TICKET_READ.value, "system")
+    stmt = select(System).order_by(System.name)
+    if not (include_inactive and ctx.can(P.SYSTEM_MANAGE)):
+        stmt = stmt.where(System.active.is_(True))
+    return [SystemOut.model_validate(s) for s in (await ctx.session.scalars(stmt)).all()]
+
+
+async def _check_system_refs(ctx: Ctx, data: SystemIn) -> None:
+    if data.default_team_id and await ctx.session.get(Team, data.default_team_id) is None:
+        raise ValidationFailed("unknown team")
+
+
+async def create_system(ctx: Ctx, data: SystemIn) -> SystemOut:
+    ctx.require(P.SYSTEM_MANAGE, "system")
+    await _check_system_refs(ctx, data)
+    system = System(**data.model_dump())
+    ctx.session.add(system)
+    try:
+        await ctx.session.flush()
+    except IntegrityError as exc:
+        raise Conflict("a system with this key already exists") from exc
+    ctx.audit("system.created", "system", system.id, key=system.key)
+    return SystemOut.model_validate(system)
+
+
+async def update_system(ctx: Ctx, system_id: uuid.UUID, data: SystemIn) -> SystemOut:
+    ctx.require(P.SYSTEM_MANAGE, "system", str(system_id))
+    system = await ctx.session.get(System, system_id)
+    if system is None:
+        raise NotFound("system")
+    await _check_system_refs(ctx, data)
+    for field, value in data.model_dump().items():
+        setattr(system, field, value)
+    try:
+        await ctx.session.flush()
+    except IntegrityError as exc:
+        raise Conflict("a system with this key already exists") from exc
+    ctx.audit("system.updated", "system", system.id, key=system.key, active=system.active)
+    return SystemOut.model_validate(system)
+
+
+async def delete_system(ctx: Ctx, system_id: uuid.UUID) -> None:
+    """Remove a system. Tickets keep existing and simply lose the link; to
+    preserve history, deactivate the system instead."""
+    ctx.require(P.SYSTEM_MANAGE, "system", str(system_id))
+    system = await ctx.session.get(System, system_id)
+    if system is None:
+        raise NotFound("system")
+    await ctx.session.delete(system)
+    ctx.audit("system.deleted", "system", system_id, key=system.key)
+
+
 # --- ingest sources ---------------------------------------------------------------
 
 
@@ -121,6 +181,7 @@ def _source_out(ctx: Ctx, source: IngestSource, registry: ConnectorRegistry) -> 
         connector=source.connector,
         config=source.config,
         default_team_id=source.default_team_id,
+        default_system_id=source.default_system_id,
         enabled=source.enabled,
         has_secrets=bool(source.secrets),  # secrets are write-only: never returned
         has_token=source.token_hash is not None,
@@ -167,13 +228,14 @@ async def create_source(ctx: Ctx, registry: ConnectorRegistry, data: SourceIn) -
         secrets=dict(data.secrets) or None,
         token_hash=token_hash,
         default_team_id=data.default_team_id,
+        default_system_id=data.default_system_id,
         enabled=data.enabled,
     )
     ctx.session.add(source)
     try:
         await ctx.session.flush()
     except IntegrityError as exc:
-        raise Conflict("a source with this name already exists") from exc
+        raise Conflict("source name already exists, or unknown team/system") from exc
     ctx.audit("source.created", "source", source.id, connector=source.connector)
     return SourceCreated(**_source_out(ctx, source, registry).model_dump(), ingest_token=token)
 
@@ -200,6 +262,8 @@ async def update_source(
         source.secrets = dict(data.secrets) or None
     if "default_team_id" in fields:
         source.default_team_id = data.default_team_id
+    if "default_system_id" in fields:
+        source.default_system_id = data.default_system_id
     if "enabled" in fields and data.enabled is not None:
         source.enabled = data.enabled
     ctx.audit("source.updated", "source", source.id, fields=sorted(fields))

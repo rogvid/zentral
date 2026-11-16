@@ -152,6 +152,10 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         priority: Priority | None = None,
         category: str | None = None,
         team_id: Annotated[str | None, Field(description="Team UUID.")] = None,
+        system_id: Annotated[
+            str | None,
+            Field(description="Only tickets about this system (UUID from list_systems)."),
+        ] = None,
         unassigned: Annotated[bool, Field(description="Only tickets with no assignee.")] = False,
         query: Annotated[
             str | None, Field(description="Text to find in the subject, or a ticket key.")
@@ -168,6 +172,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                     priority=priority,
                     category=category,
                     team_id=uuid.UUID(team_id) if team_id else None,
+                    system_id=uuid.UUID(system_id) if system_id else None,
                     unassigned=unassigned,
                     q=query,
                     limit=limit,
@@ -194,6 +199,9 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         priority: Priority = "normal",
         category: str | None = None,
         team_id: str | None = None,
+        system_id: Annotated[
+            str | None, Field(description="System the ticket concerns (UUID from list_systems).")
+        ] = None,
     ) -> dict[str, Any]:
         """Open a new ticket on behalf of the service desk (no external requester)."""
         async with tool_ctx() as ctx:
@@ -203,6 +211,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                 priority=priority,
                 category=category,
                 team_id=uuid.UUID(team_id) if team_id else None,
+                system_id=uuid.UUID(system_id) if system_id else None,
             )
             return (await tickets.create_ticket(ctx, data)).model_dump(mode="json")
 
@@ -214,6 +223,9 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         category: str | None = None,
         tags: list[str] | None = None,
         team_id: Annotated[str | None, Field(description="Route to this team (UUID).")] = None,
+        system_id: Annotated[
+            str | None, Field(description="System the ticket concerns (UUID from list_systems).")
+        ] = None,
         assignee_id: Annotated[str | None, Field(description="Assign to this user id.")] = None,
     ) -> dict[str, Any]:
         """Change ticket fields. Only the arguments you pass are changed."""
@@ -226,6 +238,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                     "category": category,
                     "tags": tags,
                     "team_id": team_id,
+                    "system_id": system_id,
                     "assignee_id": assignee_id,
                 }.items()
                 if v is not None
@@ -256,6 +269,15 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         """List teams (queues) tickets can be routed to."""
         async with tool_ctx() as ctx:
             return [{"id": str(t.id), "name": t.name} for t in await admin.list_teams(ctx)]
+
+    @mcp.tool()
+    async def list_systems() -> list[dict[str, Any]]:
+        """List the business systems a ticket can concern (payments, HR portal, …)."""
+        async with tool_ctx() as ctx:
+            return [
+                {"id": str(s.id), "key": s.key, "name": s.name, "description": s.description}
+                for s in await admin.list_systems(ctx)
+            ]
 
     @mcp.tool()
     async def list_categories() -> list[str]:

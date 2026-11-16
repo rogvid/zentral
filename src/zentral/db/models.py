@@ -105,6 +105,26 @@ class TeamMember(Base):
     user_id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
 
 
+class System(Base):
+    """A business system or service that tickets are about (payments, HR portal, …)."""
+
+    __tablename__ = "systems"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # Stable machine identifier used by integrations, e.g. "payments".
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(500), default="")
+    # Words that identify the system in free text (used by AI and the rules fallback).
+    keywords: Mapped[list[str]] = mapped_column(default=list)
+    # Tickets about this system go to this team unless something else routed them.
+    default_team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class Contact(Base):
     """A requester (data subject)."""
 
@@ -133,6 +153,9 @@ class IngestSource(Base):
     default_team_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL")
     )
+    default_system_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("systems.id", ondelete="SET NULL")
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     cursor: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -152,6 +175,9 @@ class Ticket(Base):
         ForeignKey("teams.id", ondelete="SET NULL"), index=True
     )
     assignee_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    system_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("systems.id", ondelete="SET NULL"), index=True
+    )
     requester_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("contacts.id", ondelete="SET NULL"), index=True
     )
@@ -162,6 +188,7 @@ class Ticket(Base):
 
     ai_category: Mapped[str | None] = mapped_column(String(64))
     ai_priority: Mapped[str | None] = mapped_column(String(16))
+    ai_system_key: Mapped[str | None] = mapped_column(String(64))
     ai_confidence: Mapped[float | None] = mapped_column(Float)
     ai_summary: Mapped[str | None] = mapped_column(EncryptedText)
     ai_model: Mapped[str | None] = mapped_column(String(128))
@@ -173,6 +200,7 @@ class Ticket(Base):
 
     requester: Mapped[Contact | None] = relationship(lazy="joined")
     team: Mapped[Team | None] = relationship(lazy="joined")
+    system: Mapped[System | None] = relationship(lazy="joined")
     messages: Mapped[list[Message]] = relationship(
         back_populates="ticket", order_by="Message.created_at", lazy="raise"
     )

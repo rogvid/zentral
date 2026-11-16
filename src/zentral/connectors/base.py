@@ -70,6 +70,7 @@ class InboundMessage:
     sender_name: str | None = None
     thread_id: str | None = None  # external conversation id, for threading
     priority: str | None = None
+    system: str | None = None  # key of the system the message concerns, if the sender knows
     received_at: datetime | None = None
 
 

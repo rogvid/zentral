@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     cors_origins: StrList = Field(default_factory=list)
     static_dir: str | None = None
     ticket_prefix: str = "ZEN"
+    # Governance: a ticket cannot be resolved or closed until it names the system it concerns.
+    require_system_to_resolve: bool = False
 
     # --- Authentication (Microsoft Entra ID) --------------------------------
     auth_mode: Literal["entra", "dev"] = "entra"

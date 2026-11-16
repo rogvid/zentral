@@ -65,7 +65,7 @@ class AnthropicProvider(AIProvider):
             response = await self._client.messages.parse(
                 model=self._model,
                 max_tokens=1024,
-                system=system_prompt(inp.categories),
+                system=system_prompt(inp.categories, inp.systems),
                 messages=[{"role": "user", "content": user_prompt(inp)}],
                 output_format=Classification,
                 output_config={"effort": "low"},

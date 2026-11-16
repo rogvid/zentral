@@ -158,6 +158,11 @@ class IngestSource(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     cursor: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Health of polling/delivery, shown to administrators. Error text comes from
+    # ConnectorError messages only, which never contain content.
+    last_ok_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    last_error_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 

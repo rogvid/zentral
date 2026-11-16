@@ -135,7 +135,9 @@ def test_init_then_doctor(tmp_path, monkeypatch):
     assert runner.invoke(app, ["db", "upgrade"]).exit_code == 0
     after = runner.invoke(app, ["doctor"])
     assert after.exit_code == 0, after.output
-    assert "✓ database: sqlite, schema 0002" in after.output
+    from zentral.doctor import expected_revision
+
+    assert f"✓ database: sqlite, schema {expected_revision()}" in after.output
     assert "✓ audit trail" in after.output and "! identity provider" in after.output
     # Secrets never appear in doctor output.
     for line in text_.splitlines():

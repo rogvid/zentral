@@ -9,10 +9,12 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from zentral.connectors.base import Capability
+from zentral.connectors.base import Capability, ConnectorError
 from zentral.connectors.registry import ConnectorRegistry
 from zentral.db.models import AutomationRule, IngestSource, System, Team, TeamMember, User
+from zentral.runtime import Runtime
 from zentral.schemas import (
+    DiagnosticOut,
     RuleIn,
     RuleOut,
     SourceCreated,
@@ -186,6 +188,10 @@ def _source_out(ctx: Ctx, source: IngestSource, registry: ConnectorRegistry) -> 
         has_secrets=bool(source.secrets),  # secrets are write-only: never returned
         has_token=source.token_hash is not None,
         hook_url=hook,
+        capabilities=sorted(c.value for c in klass.capabilities) if klass else [],
+        last_ok_at=source.last_ok_at,
+        last_error=source.last_error,
+        last_error_at=source.last_error_at,
         created_at=source.created_at,
     )
 
@@ -254,12 +260,15 @@ async def update_source(
     source = await _load_source(ctx, source_id)
     fields = data.model_fields_set
     config = data.config if "config" in fields and data.config is not None else source.config
-    secrets = (
-        data.secrets if "secrets" in fields and data.secrets is not None else source.secrets or {}
-    )
+    # Secrets are write-only: a blank value means "keep what is stored".
+    secrets = dict(source.secrets or {})
+    if "secrets" in fields and data.secrets is not None:
+        secrets.update({k: v for k, v in data.secrets.items() if v})
     source.config = _validate_source(registry, source.connector, config, secrets)
     if "secrets" in fields and data.secrets is not None:
-        source.secrets = dict(data.secrets) or None
+        source.secrets = secrets or None
+    # A changed configuration deserves a fresh verdict.
+    source.last_error, source.last_error_at = None, None
     if "default_team_id" in fields:
         source.default_team_id = data.default_team_id
     if "default_system_id" in fields:
@@ -268,6 +277,36 @@ async def update_source(
         source.enabled = data.enabled
     ctx.audit("source.updated", "source", source.id, fields=sorted(fields))
     return _source_out(ctx, source, registry)
+
+
+async def test_source(ctx: Ctx, runtime: Runtime, source_id: uuid.UUID) -> list[DiagnosticOut]:
+    """Run the connector's self-test (credentials, reachability, scope)."""
+    source = await _load_source(ctx, source_id)
+    connector = runtime.connector_for(source)
+    if connector is None:
+        raise ValidationFailed("connector is not installed or not enabled")
+    try:
+        out = [
+            DiagnosticOut.model_validate(r, from_attributes=True)
+            for r in await connector.diagnose()
+        ]
+    except ConnectorError as exc:
+        out = [DiagnosticOut(name="Self-test", status="fail", detail=str(exc)[:300])]
+    if not out:
+        out = [
+            DiagnosticOut(
+                name="Configuration", status="ok", detail="valid; this connector has no live checks"
+            )
+        ]
+    failed = any(d.status == "fail" for d in out)
+    ctx.audit(
+        "source.tested",
+        "source",
+        source.id,
+        outcome="failure" if failed else "success",
+        checks={d.name: d.status for d in out},
+    )
+    return out
 
 
 async def rotate_source_token(

@@ -198,12 +198,22 @@ class SourceOut(Out):
     has_secrets: bool
     has_token: bool
     hook_url: str | None
+    capabilities: list[str] = Field(default_factory=list)
+    last_ok_at: datetime | None = None
+    last_error: str | None = None
+    last_error_at: datetime | None = None
     created_at: datetime
 
 
 class SourceCreated(SourceOut):
     # Shown exactly once; only a hash is stored.
     ingest_token: str | None
+
+
+class DiagnosticOut(Out):
+    name: str
+    status: Literal["ok", "warn", "fail"]
+    detail: str
 
 
 class RuleConditions(In):

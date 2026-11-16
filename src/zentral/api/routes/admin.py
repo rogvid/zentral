@@ -7,6 +7,7 @@ from fastapi import APIRouter, status
 
 from zentral.api.deps import CtxDep, RuntimeDep
 from zentral.schemas import (
+    DiagnosticOut,
     RuleIn,
     RuleOut,
     SourceCreated,
@@ -112,6 +113,13 @@ async def update_source(
     source = await admin.update_source(ctx, rt.registry, source_id, data)
     await ctx.commit()
     return source
+
+
+@router.post("/sources/{source_id}/test")
+async def test_source(ctx: CtxDep, rt: RuntimeDep, source_id: uuid.UUID) -> list[DiagnosticOut]:
+    results = await admin.test_source(ctx, rt, source_id)
+    await ctx.commit()
+    return results
 
 
 @router.post("/sources/{source_id}/rotate-token")

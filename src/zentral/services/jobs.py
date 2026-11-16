@@ -16,13 +16,11 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import and_, delete, or_, select
 
 from zentral.ai.service import classify_ticket
 from zentral.connectors.base import (
     Capability,
-    Connector,
-    ConnectorContext,
     ConnectorError,
     OutboundMessage,
 )
@@ -45,22 +43,8 @@ log = structlog.get_logger(__name__)
 
 MAX_ATTEMPTS = 5
 VISIBILITY_TIMEOUT = timedelta(minutes=15)
-
-
-def instantiate(runtime: Runtime, source: IngestSource) -> Connector | None:
-    klass = runtime.registry.get(source.connector)
-    if klass is None:
-        return None
-    return klass(
-        ConnectorContext(
-            source_id=source.id,
-            config=dict(source.config or {}),
-            secrets=dict(source.secrets or {}),
-            token_hash=source.token_hash,
-            http=runtime.http,
-            settings=runtime.settings,
-        )
-    )
+DONE_TTL = timedelta(days=1)
+FAILED_TTL = timedelta(days=30)
 
 
 class Worker:
@@ -131,6 +115,12 @@ class Worker:
             if error is None:
                 stored.status = JobStatus.DONE
                 stored.last_error = None
+            elif stored.kind == "poll_source":
+                # No retry chain for polls: the scheduler starts a fresh one next
+                # interval, and the channel shows the error meanwhile.
+                stored.status = JobStatus.FAILED
+                stored.last_error = error
+                await self._record_source_error(ctx, stored, error)
             elif stored.attempts >= MAX_ATTEMPTS:
                 stored.status = JobStatus.FAILED
                 stored.last_error = error
@@ -140,6 +130,23 @@ class Worker:
                 stored.last_error = error
                 stored.run_after = utcnow() + timedelta(seconds=15 * 2**stored.attempts)
             await ctx.commit()
+
+    async def _record_source_error(self, ctx: Ctx, job: Job, error: str) -> None:
+        """Surface a channel's failure to administrators (and the audit trail, once)."""
+        source = await ctx.session.get(IngestSource, uuid.UUID(str(job.payload["source_id"])))
+        if source is None:
+            return
+        first = source.last_error != error[:300]
+        source.last_error, source.last_error_at = error[:300], utcnow()
+        if first:
+            ctx.audit(
+                "source.failing",
+                "source",
+                source.id,
+                outcome="failure",
+                connector=source.connector,
+                error=error.split(":", 1)[0],
+            )
 
     async def _on_exhausted(self, ctx: Ctx, job: Job) -> None:
         if job.kind == "send_message":
@@ -181,6 +188,17 @@ class Worker:
                     and str(source.id) not in polling
                 ):
                     session.add(Job(kind="poll_source", payload={"source_id": str(source.id)}))
+            # Housekeeping: finished jobs are only kept long enough to debug.
+            await session.execute(
+                delete(Job).where(
+                    or_(
+                        and_(Job.status == JobStatus.DONE, Job.created_at < utcnow() - DONE_TTL),
+                        and_(
+                            Job.status == JobStatus.FAILED, Job.created_at < utcnow() - FAILED_TTL
+                        ),
+                    )
+                )
+            )
             if not any(j.kind == "retention_sweep" for j in open_jobs):
                 session.add(
                     Job(kind="retention_sweep", payload={}, run_after=utcnow() + timedelta(hours=6))
@@ -212,13 +230,21 @@ class Worker:
         source = await ctx.session.get(IngestSource, uuid.UUID(str(payload["source_id"])))
         if source is None or not source.enabled:
             return
-        connector = instantiate(self.rt, source)
+        connector = self.rt.connector_for(source)
         if connector is None or Capability.POLL not in connector.capabilities:
             return
         result = await connector.poll(dict(source.cursor or {}))
         for message in result.messages:
             await ingest(ctx, source, message)
         source.cursor = result.cursor
+        source.last_ok_at, source.last_error, source.last_error_at = utcnow(), None, None
+        if result.ack:
+            # Only tell the channel "handled" once the messages are durably stored.
+            await ctx.commit()
+            try:
+                await connector.acknowledge(result.ack)
+            except ConnectorError as exc:
+                log.warning("acknowledge_failed", source_id=str(source.id), error=str(exc))
 
     async def _send(self, ctx: Ctx, payload: dict[str, object]) -> None:
         message = await ctx.session.get(Message, uuid.UUID(str(payload["message_id"])))
@@ -226,7 +252,7 @@ class Worker:
             return  # already delivered or withdrawn: idempotent
         ticket = await ctx.session.get(Ticket, message.ticket_id)
         source = await ctx.session.get(IngestSource, ticket.source_id) if ticket else None
-        connector = instantiate(self.rt, source) if source and source.enabled else None
+        connector = self.rt.connector_for(source) if source and source.enabled else None
         if ticket is None or connector is None or Capability.SEND not in connector.capabilities:
             message.delivery_status = DeliveryStatus.NOT_APPLICABLE
             return

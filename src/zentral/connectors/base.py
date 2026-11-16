@@ -103,6 +103,19 @@ class WebhookResult:
 class PollResult:
     messages: list[InboundMessage]
     cursor: dict[str, Any]
+    # Opaque references handed back to ``Connector.acknowledge`` once the
+    # messages are safely stored (e.g. to mark mail as read).
+    ack: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """One line of a channel self-test, shown to administrators. Never put
+    secrets or message content in ``detail``."""
+
+    name: str
+    status: str  # ok | warn | fail
+    detail: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +154,14 @@ class Connector(ABC):
 
     async def send(self, message: OutboundMessage) -> None:
         raise NotImplementedError
+
+    async def acknowledge(self, refs: list[str]) -> None:  # noqa: B027 - optional hook
+        """Called after polled messages were committed. Optional; failures are
+        logged and never undo the ingestion."""
+
+    async def diagnose(self) -> list[Diagnostic]:
+        """Self-test run when an administrator presses *Test*. Optional."""
+        return []
 
     # -- helpers for implementers -------------------------------------------------
 

@@ -11,7 +11,9 @@ from zentral.ai.base import AIProvider
 from zentral.ai.service import load_provider
 from zentral.audit.trail import AuditTrail, RequestMeta
 from zentral.config import Settings
+from zentral.connectors.base import Connector, ConnectorContext
 from zentral.connectors.registry import ConnectorRegistry
+from zentral.db.models import IngestSource
 from zentral.db.session import SessionFactory, create_engine, create_session_factory
 from zentral.security import crypto
 from zentral.security.principal import Principal, system_principal
@@ -36,6 +38,22 @@ class Runtime:
             settings=self.settings,
             trail=self.trail,
             meta=RequestMeta(channel=channel),
+        )
+
+    def connector_for(self, source: IngestSource) -> Connector | None:
+        """Instantiate the connector for a configured channel (None if not enabled)."""
+        klass = self.registry.get(source.connector)
+        if klass is None:
+            return None
+        return klass(
+            ConnectorContext(
+                source_id=source.id,
+                config=dict(source.config or {}),
+                secrets=dict(source.secrets or {}),
+                token_hash=source.token_hash,
+                http=self.http,
+                settings=self.settings,
+            )
         )
 
     async def aclose(self) -> None:

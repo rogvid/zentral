@@ -80,6 +80,8 @@ ignore = ["S101"]
 "src/zentral/api/**" = ["B008"]
 "src/zentral/cli.py" = ["B008"]
 "scripts/**" = ["E501"]
+# Long, human-readable field descriptions shown in the admin UI.
+"src/zentral/connectors/email_graph.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -103,16 +103,45 @@ environment.
 
 ## Test the restore — monthly
 
-A backup you have not restored is a hope. Once a month, restore the latest
-backup into a scratch database and run:
+A backup you have not restored is a hope. Once a month, run the drill from an
+administrator shell with the installation's settings (on staging, or on
+production — it only reads from the production database):
 
 ```bash
-ZENTRAL_DATABASE_URL=postgresql+asyncpg://…/zentral_restore_test zentral doctor
+python scripts/restore_drill.py "postgresql://zentral@db.example.internal/zentral?sslmode=require" \
+  --escrow-keyring /media/escrow/keyring-escrow.json \
+  --escrow-kek /media/escrow/zentral-escrow.kek
 ```
 
-`doctor` proves the three things that matter: the schema is intact, the key
-decrypts the data, and the audit chain verifies. Record the date and result.
-Drop the scratch database afterwards — it contains personal data.
+It backs up, restores into a scratch database on the same server, and proves
+the three things that matter: the schema is intact and the keys decrypt the
+data (`zentral doctor`), the audit chain verifies (`zentral audit verify`),
+and the offline escrow copy opens to the same keys
+(`zentral keys verify-escrow`). Then it drops the scratch database and deletes
+the dump — both contain personal data. Paste the report into your drill log:
+
+```
+| Step | Seconds | Result |
+|---|---:|---|
+| backup (pg_dump) | 9.5 | ok: 182.2 MiB |
+| create scratch database | 0.1 | ok |
+| restore (pg_restore) | 6.5 | ok |
+| zentral doctor (schema, decryption) | 2.9 | ok: 7 ok, 2 warning(s), 0 failure(s) |
+| zentral audit verify | 2.7 | ok: OK: 68633 events verified |
+| escrow keyring matches | 0.5 | ok: ✓ escrow keyring (sealed 2026-11-17T22:38:17+00:00) matches the keys in use |
+| drop scratch database | 0.2 | ok |
+| **total** | **22.3** | passed |
+```
+
+*Measured on the load-test database: 13,200 tickets, 19,900 messages, 830
+attachments, 68,600 audit events — 296 MiB in PostgreSQL 16, 182 MiB as a dump
+— on 4 vCPUs with local disk. Backup and restore time grow roughly linearly
+with size, and attachments are most of it. Plan your recovery-time objective
+from your own drill, on your own storage.*
+
+If a step fails, the restore would have failed too: fix it before you need it
+(wrong or stale keys → [Key custody](../operations/key-custody.md); chain
+broken → [Audit verification](audit-verification.md)).
 
 ## Disaster recovery in a new environment
 

@@ -138,6 +138,11 @@ AES key there, set `ZENTRAL_AZURE_KEYVAULT_ALGORITHM=A256KW`.
     # ZENTRAL_VAULT_TOKEN_FILE=/vault/secrets/token
     ```
 
+    On Kubernetes, the base manifests do not mount the service-account token
+    (`automountServiceAccountToken: false`). For Kubernetes auth, add a
+    projected token volume with your Vault's audience to the API and worker
+    pods and point `ZENTRAL_VAULT_KUBERNETES_TOKEN_FILE` at it.
+
 ## New installation
 
 In an administrator shell with the provider settings above (and wrap

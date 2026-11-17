@@ -74,7 +74,8 @@ def main() -> int:
         seconds = time.perf_counter() - start
         last = (result.stdout.strip() or result.stderr.strip()).splitlines()
         outcome = "ok" if result.returncode == 0 else "FAILED"
-        rows.append((name, seconds, f"{outcome}: {last[-1] if last else ''}"[:120]))
+        detail = f"{outcome}: {last[-1]}" if last else outcome
+        rows.append((name, seconds, detail[:120]))
         if result.returncode != 0:
             failed = True
             sys.stderr.write(f"--- {name} failed\n{result.stdout}{result.stderr}\n")

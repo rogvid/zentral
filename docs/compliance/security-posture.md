@@ -59,6 +59,12 @@ that drafts never reach browser storage.
 ## Verified manually during development
 
 - Full test suite against **PostgreSQL 16**.
+- **Load test** on PostgreSQL 16: no errors at up to 200 concurrent virtual
+  users; 68,600 audit events written concurrently by three processes, all
+  verified. Found and fixed a race on first contact
+  ([sizing](../operations/sizing.md)).
+- **Restore drill** of a 300 MiB database: backup, restore, decryption, audit
+  verification and the escrow key check in 22 seconds.
 - Live classification with **Claude Haiku 5.5** through the `claude_cli`
   provider (subscription sign-in).
 - Web client end-to-end in Chromium through the real authorization-code + PKCE
@@ -79,7 +85,7 @@ that drafts never reach browser storage.
 | **Container image** | Dockerfile not built in the development environment (no Docker daemon); CI builds and smoke-tests it |
 | **Compose stack** | Validated with `docker compose config`; not started |
 | **Kubernetes manifests** | Validated for syntax and hardening fields; not applied to a cluster |
-| **Load and concurrency** | No load test; the multi-worker job queue and the audit advisory lock are exercised by tests but not under contention |
+| **Load and concurrency** | Load-tested on PostgreSQL with up to 200 virtual users over three server processes on one 4-vCPU host ([sizing](../operations/sizing.md)); not yet on production hardware or across hosts |
 | **Accessibility** | Semantic HTML and keyboard operation by design; no formal audit |
 
 ## Known limitations

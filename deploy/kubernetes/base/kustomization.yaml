@@ -20,8 +20,8 @@ resources:
   - networkpolicy.yaml
 images:
   - name: zentral
-    newName: ghcr.io/your-org/zentral
-    newTag: "0.1.0"
+    newName: ghcr.io/rogvid/zentral
+    newTag: "1.0.0"
 labels:
   - pairs:
       app.kubernetes.io/part-of: zentral

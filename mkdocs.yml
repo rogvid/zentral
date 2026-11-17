@@ -108,11 +108,13 @@ nav:
       - Identity — other OIDC providers: operations/identity-oidc.md
       - Configuration reference: operations/configuration.md
       - Key custody (KMS / HSM): operations/key-custody.md
+      - Sizing and load testing: operations/sizing.md
       - Monitoring and logs: operations/monitoring.md
   - Runbooks:
       - Index: runbooks/index.md
       - First deployment: runbooks/first-deployment.md
       - Upgrade: runbooks/upgrade.md
+      - Release, staging and go-live: runbooks/release.md
       - Backup and restore: runbooks/backup-restore.md
       - Rotate keys and secrets: runbooks/key-rotation.md
       - Verify the audit trail: runbooks/audit-verification.md
@@ -126,6 +128,8 @@ nav:
       - Roles and permissions: compliance/rbac.md
       - Logging and audit: compliance/logging.md
       - Security posture: compliance/security-posture.md
+      - DPIA (draft): compliance/dpia.md
+      - Penetration test brief: compliance/pentest-brief.md
   - Development:
       - Local setup: development/setup.md
       - Testing: development/testing.md

@@ -25,7 +25,9 @@ docker build -t zentral:local .
 cd deploy/compose
 ```
 
-(Or pull a released image and set `ZENTRAL_IMAGE` in `.env`.)
+Or use the released image: set
+`ZENTRAL_IMAGE=ghcr.io/rogvid/zentral@sha256:<digest from the release notes>`
+in `.env` and skip the build.
 
 ## 2. Configure
 

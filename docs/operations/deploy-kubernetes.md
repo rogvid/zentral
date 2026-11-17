@@ -16,15 +16,23 @@ You bring PostgreSQL, an ingress controller and a way to manage secrets.
 
 All pods meet the *restricted* Pod Security Standard: non-root (uid 10001),
 read-only root filesystem, no capabilities, `RuntimeDefault` seccomp, no
-service-account token.
+service-account token mounted (Azure workload identity projects its own
+short-lived token for the key provider).
 
 ## 1. Image
 
-Build and push to your registry, pinned by digest in production:
+Use the released image, **pinned by digest** in production — the digest is in
+the release notes, and you can verify where it was built:
 
 ```bash
-docker build -t registry.example.com/zentral:0.1.0 .
-docker push registry.example.com/zentral:0.1.0
+gh attestation verify oci://ghcr.io/rogvid/zentral:1.0.0 -R rogvid/zentral
+```
+
+Or build and push to your own registry:
+
+```bash
+docker build -t registry.example.com/zentral:1.0.0 .
+docker push registry.example.com/zentral:1.0.0
 ```
 
 ## 2. An overlay for your environment
@@ -40,8 +48,8 @@ resources:
   - ../../base
 images:
   - name: zentral
-    newName: registry.example.com/zentral
-    newTag: "0.1.0"
+    newName: ghcr.io/rogvid/zentral
+    digest: sha256:<from the release notes>
 patches:
   - target: { kind: ConfigMap, name: zentral-config }
     patch: |

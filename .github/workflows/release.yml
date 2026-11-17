@@ -1,0 +1,142 @@
+name: Release
+
+# Publishes the container image to GitHub Container Registry with an SBOM and
+# signed build provenance, and creates the GitHub release.
+#
+#   git tag -s v1.0.0 -m "Zentral 1.0.0" && git push origin v1.0.0
+#
+# Run it by hand (Actions → Release → Run workflow) to publish a staging image
+# from any branch: tagged `staging` and `sha-<commit>`, no GitHub release.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    name: Publish image
+    needs: [ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # signed provenance
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Image name and version check
+        id: name
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "image=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          if [ "$REF_TYPE" = tag ]; then
+            version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+            if [ "v$version" != "$REF_NAME" ]; then
+              echo "::error::tag $REF_NAME does not match pyproject.toml version $version"
+              exit 1
+            fi
+            grep -q "^## \[$version\]" CHANGELOG.md \
+              || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
+          fi
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=staging,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,format=long
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Smoke test the published image
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm "$IMAGE" keys generate > keys.env
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --env-file keys.env \
+            -e ZENTRAL_ENV=development -e ZENTRAL_AUTH_MODE=dev \
+            -e ZENTRAL_DATABASE_URL=sqlite+aiosqlite:////tmp/z.db \
+            --entrypoint sh "$IMAGE" -c "zentral db upgrade && zentral doctor"
+          rm keys.env
+
+  github-release:
+    name: GitHub release
+    if: github.ref_type == 'tag'
+    needs: [image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+      - name: Build the Python package
+        run: uv build
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          IMAGE: ${{ needs.image.outputs.image }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Container image"
+            echo
+            echo '```'
+            echo "$IMAGE:$version"
+            echo "$IMAGE@$DIGEST"
+            echo '```'
+            echo
+            echo "Verify its provenance: \`gh attestation verify oci://$IMAGE@$DIGEST -R $GITHUB_REPOSITORY\`"
+          } >> notes.md
+          prerelease=""
+          case "$version" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --title "Zentral $version" --notes-file notes.md \
+            --verify-tag $prerelease

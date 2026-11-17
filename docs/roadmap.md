@@ -53,11 +53,11 @@ flowchart LR
 
 ### 1. Make it safe to go live (P1)
 
-| Issue | Why first |
+| Issue | Status |
 |---|---|
-| [#8 Hardware-backed key custody](https://github.com/rogvid/zentral/issues/8) | The largest residual risk in the [threat model](architecture/threat-model.md): keys in environment variables mean a compromised host exposes all data |
-| [#20 Load test, restore drill, dependency upgrades](https://github.com/rogvid/zentral/issues/20) | Proves capacity and recovery before anyone depends on it; clears the open Dependabot PRs |
-| [#9 Independent security review, pen test and DPIA](https://github.com/rogvid/zentral/issues/9) | The precondition for handling private data. Do it after #8 and #20 so testers see the production shape |
+| [#8 Hardware-backed key custody](https://github.com/rogvid/zentral/issues/8) | **Done in 1.0.0**: keys in a keyring wrapped by Key Vault / Managed HSM or Vault Transit ([key custody](operations/key-custody.md)) |
+| [#20 Load test, restore drill, dependency upgrades](https://github.com/rogvid/zentral/issues/20) | **Done in 1.0.0**: [sizing](operations/sizing.md) from measured load tests (a race and a CPU hotspot fixed), scripted [restore drill](runbooks/backup-restore.md#test-the-restore-monthly), dependencies upgraded. Remaining: make the CI checks required with branch protection |
+| [#9 Independent security review, pen test and DPIA](https://github.com/rogvid/zentral/issues/9) | **Ready to start**: the [test brief](compliance/pentest-brief.md) and a [pre-filled DPIA](compliance/dpia.md). Needs an independent tester and the controller's sign-off — the gate before real personal data ([release runbook](runbooks/release.md)) |
 
 ### 2. Reach people where they are (P1–P2)
 

@@ -79,7 +79,10 @@ export function Systems() {
         </div>
       </form>
       {systems.data.length === 0 && (
-        <Empty title="No systems yet" hint="Add the systems your organisation supports so tickets can be linked to them." />
+        <Empty
+          title="No systems yet"
+          hint="Name the systems your organisation looks after — payments, the HR portal, the web shop — so every ticket says what it is about."
+        />
       )}
       {systems.data.map((s) => (
         <div key={s.id} className="card panel">

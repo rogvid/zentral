@@ -1,0 +1,30 @@
+/* The documentation wears the same paper-and-ink identity as the application. */
+:root, [data-md-color-scheme="default"] {
+  --md-primary-fg-color: #173a33;
+  --md-primary-fg-color--light: #1f6b5a;
+  --md-primary-fg-color--dark: #10291f;
+  --md-accent-fg-color: #d98f22;
+  --md-default-bg-color: #f6f2ea;
+  --md-default-fg-color: #221e19;
+  --md-typeset-a-color: #1f6b5a;
+  --md-code-bg-color: #efe9de;
+  --md-text-font-family: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --md-code-font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0f1916;
+  --md-primary-fg-color--light: #1d3530;
+  --md-primary-fg-color--dark: #0a120f;
+  --md-accent-fg-color: #f0b655;
+  --md-default-bg-color: #15130f;
+  --md-typeset-a-color: #7cc8ab;
+  --md-code-bg-color: #1e1b16;
+  --md-hue: 35;
+}
+.md-typeset h1, .md-typeset h2, .md-header__topic:first-child {
+  font-family: "Fraunces Variable", "Iowan Old Style", Georgia, serif;
+  letter-spacing: -0.01em;
+}
+.md-typeset h1 { font-weight: 560; color: inherit; }
+.md-typeset h2 { font-weight: 560; }
+.md-typeset img { border-radius: 12px; border: 1px solid rgb(0 0 0 / 8%); }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Compass } from "../brand";
 import { useApp, useLoad } from "../context";
 import { query } from "../lib";
 import type { AuditEvent } from "../types";
@@ -72,7 +73,7 @@ export function AuditPage() {
       ) : !page.data ? (
         <Spinner />
       ) : page.data.items.length === 0 ? (
-        <Empty title="No events match" />
+        <Empty art={<Compass />} title="No events match" hint="Widen the filters, or check the actor and resource IDs." />
       ) : (
         <div className="card table-card">
           <table className="table table-dense">

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api";
+import { Compass } from "../brand";
 import { useApp } from "../context";
 import type { Contact } from "../types";
 import { Dialog, Empty, Field, PageHead } from "../ui";
@@ -66,7 +67,9 @@ export function PrivacyPage() {
         </div>
       </form>
 
-      {missing && <Empty title="No data held" hint="No requester with this address exists in Zentral." />}
+      {missing && (
+        <Empty art={<Compass />} title="No data held" hint="No requester with this address exists in Zentral. The lookup itself has been recorded." />
+      )}
 
       {contact && (
         <div className="card panel">

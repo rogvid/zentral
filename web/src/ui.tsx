@@ -2,7 +2,7 @@
 // HTML: everything is rendered through React text nodes.
 
 import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
-import { AlertIcon, InboxIcon } from "./icons";
+import { Kite, Seedling } from "./brand";
 import { hue, initials, titleCase } from "./lib";
 import type { Priority, Status } from "./types";
 
@@ -28,9 +28,9 @@ export function Chip({ children, tone = "neutral" }: { children: ReactNode; tone
   return <span className={`chip chip-${tone}`}>{children}</span>;
 }
 
-export function Avatar({ name, tone = "staff" }: { name: string; tone?: string }) {
+export function Avatar({ name, tone = "staff", size }: { name: string; tone?: string; size?: "sm" }) {
   return (
-    <span className={`avatar avatar-${tone} hue-${hue(name)}`} aria-hidden="true">
+    <span className={`avatar avatar-${tone} hue-${hue(name)}${size ? ` avatar-${size}` : ""}`} aria-hidden="true">
       {initials(name)}
     </span>
   );
@@ -48,10 +48,8 @@ export function Spinner({ label = "Loading" }: { label?: string }) {
 export function ErrorState({ message, retry }: { message: string; retry?: () => void }) {
   return (
     <div className="state state-error" role="alert">
-      <span className="state-art state-art-error">
-        <AlertIcon size={22} />
-      </span>
-      <strong>Something went wrong</strong>
+      <Kite />
+      <strong>That didn’t go to plan</strong>
       <span>{message}</span>
       {retry && (
         <button className="btn btn-quiet" onClick={retry}>
@@ -62,12 +60,10 @@ export function ErrorState({ message, retry }: { message: string; retry?: () => 
   );
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+export function Empty({ title, hint, art }: { title: string; hint?: ReactNode; art?: ReactNode }) {
   return (
     <div className="state state-empty">
-      <span className="state-art">
-        <InboxIcon size={22} />
-      </span>
+      {art ?? <Seedling />}
       <strong>{title}</strong>
       {hint && <span>{hint}</span>}
     </div>

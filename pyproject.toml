@@ -82,6 +82,7 @@ ignore = ["S101"]
 "scripts/**" = ["E501"]
 # Long, human-readable field descriptions shown in the admin UI.
 "src/zentral/connectors/email_graph.py" = ["E501"]
+"src/zentral/api/routes/devidp.py" = ["E501"]  # embedded stylesheet
 
 [tool.mypy]
 python_version = "3.12"

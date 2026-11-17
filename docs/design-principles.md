@@ -81,3 +81,29 @@ generated from the code and checked in CI. What is *not* verified is listed in
 Python, PostgreSQL, standard OAuth 2.0 / OpenID Connect, JSON over HTTP. Few
 dependencies, each one justified; no message broker, cache or search cluster to
 operate and secure.
+
+## 9. Calm, warm, human
+
+Zentral is used by people who spend their day dealing with other people's
+problems. The interface should lower the temperature, not raise it.
+
+- **Paper and ink.** A warm surface and a deep pine for trust; a single saffron
+  accent for what deserves a glance (new, urgent, focus). No neon, no
+  gradients for their own sake. A dark "night desk" theme keeps the same
+  character.
+- **Words that matter get a voice.** A soft serif (Fraunces) is used for the
+  greeting, headings, ticket subjects and numbers; Inter carries the
+  interface. Both are bundled with the application — no font is fetched from
+  a third party.
+- **Say it in a sentence.** The inbox greets you and tells you, in one line,
+  what is going on ("7 open tickets — 1 urgent and 6 waiting for someone to
+  pick them up"). Numbers support the sentence, not the other way round.
+- **Empty is a moment, not an error.** "All caught up", with a cup of tea;
+  "No data held", with a note that the lookup was recorded. Every empty state
+  says what it means and what to do next.
+- **Things look like what they are.** Internal notes are sticky notes taped to
+  the thread; replies to the requester sit on the pine side; channel types
+  have human names ("Microsoft 365 mail"), not module names.
+- **Warmth never costs clarity.** Copy stays plain, colour is never the only
+  signal, motion respects *reduce motion*, and the playful details never
+  appear where someone is about to do something irreversible.

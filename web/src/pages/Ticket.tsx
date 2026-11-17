@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useApp, useLoad } from "../context";
-import { percent, relativeTime, titleCase } from "../lib";
+import { channelName, percent, relativeTime, titleCase } from "../lib";
 import type { Activity, Message, Priority, Status, SystemInfo, Team, Ticket, User } from "../types";
+import { firstName } from "../brand";
 import { ChannelIcon, SparkIcon } from "../icons";
 import { Avatar, Chip, ErrorState, Field, PriorityMark, Spinner, StatusBadge } from "../ui";
 
@@ -154,7 +155,11 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
         maxLength={100000}
         value={body}
         aria-label={kind === "outbound" ? "Reply" : "Internal note"}
-        placeholder={kind === "outbound" ? "Write a reply. It will be sent to the requester." : "Write a note. Only staff can see it."}
+        placeholder={
+          kind === "outbound"
+            ? `Write to ${(ticket.requester?.email && firstName(ticket.requester.display_name)) || "the requester"}…`
+            : "A note for colleagues — it never leaves the desk."
+        }
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim() && !busy) void send();
@@ -214,6 +219,7 @@ export function TicketPage({ id }: { id: number }) {
   async function update(patch: Record<string, unknown>) {
     try {
       ticket.setData(await api.patch<Ticket>(`/tickets/${id}`, patch));
+      if (patch.status === "resolved") notify("Resolved — one less thing on the list.");
     } catch (e) {
       notify(e instanceof Error ? e.message : "Could not update the ticket", "error");
     }
@@ -241,7 +247,7 @@ export function TicketPage({ id }: { id: number }) {
             {t.system_name ? <Chip tone="system">{t.system_name}</Chip> : <Chip tone="note">No system</Chip>}
             <span className="muted meta-inline">
               <ChannelIcon channel={t.channel} />
-              opened {relativeTime(t.created_at)} via {titleCase(t.channel)}
+              opened {relativeTime(t.created_at)} via {channelName(t.channel)}
             </span>
           </div>
         </header>

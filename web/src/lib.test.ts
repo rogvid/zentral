@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
+import { channelName, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
 
 describe("parseRoute", () => {
   it("parses known routes", () => {
@@ -28,6 +28,8 @@ describe("formatting", () => {
     expect(initials("")).toBe("?");
     expect(percent(0.934)).toBe("93%");
     expect(percent(null)).toBe("–");
+    expect(channelName("email_graph")).toBe("Microsoft 365 mail");
+    expect(channelName("my_plugin")).toBe("My plugin");
   });
   it("builds query strings and encodes values", () => {
     expect(query({ status: "open", q: "a&b=c", empty: "", off: false, n: 0 })).toBe(

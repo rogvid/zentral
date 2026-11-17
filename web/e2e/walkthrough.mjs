@@ -159,7 +159,7 @@ await as(browser, "admin", async (page) => {
   await page.getByRole("tab", { name: "Channels" }).click();
   await page.getByRole("button", { name: "Add channel" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Service desk mailbox");
-  await page.getByLabel("Type").selectOption("email_graph");
+  await page.getByLabel("Type").selectOption({ label: "Microsoft 365 mail" });
   await page.getByLabel("Mailbox", { exact: true }).fill("servicedesk@example.com");
   await page.getByLabel(/Allowed sender domains/).fill("example.com, partner.example.org");
   await page.getByLabel("Tenant id").fill("00000000-0000-0000-0000-000000000000");

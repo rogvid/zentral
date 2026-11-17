@@ -1,7 +1,7 @@
 site_name: Zentral
 site_description: A privacy-first, AI-friendly service desk
-repo_url: https://github.com/rogvid/zentral
-edit_uri: edit/main/docs/
+# No repo_url on purpose: the theme would then make every reader's browser call
+# GitHub's API. A plain link (extra.social) does not.
 strict: true
 
 theme:
@@ -12,15 +12,31 @@ theme:
     - navigation.footer
     - content.code.copy
     - search.suggest
+  # Same identity as the application; no web fonts fetched from third parties.
+  font: false
+  logo: assets/mark.svg
+  favicon: assets/mark.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle: { icon: material/weather-night, name: Dark mode }
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle: { icon: material/weather-sunny, name: Light mode }
+
+extra_css:
+  - assets/zentral.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/rogvid/zentral
+      name: Source code
 
 markdown_extensions:
   - admonition

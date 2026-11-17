@@ -144,7 +144,7 @@ export function Rules() {
           <button className="btn btn-primary">Add rule</button>
         </div>
       </form>
-      {rules.data.length === 0 && <Empty title="No automation rules" hint="Rules run after AI classification of each new ticket." />}
+      {rules.data.length === 0 && <Empty title="No automation rules" hint="Rules quietly route and label new tickets after AI triage. Nothing happens automatically until you add one." />}
       {rules.data.map((rule) => (
         <div key={rule.id} className="card panel">
           <header className="panel-head">

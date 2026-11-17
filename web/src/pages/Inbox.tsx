@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useApp, useLoad } from "../context";
-import { query, relativeTime, titleCase } from "../lib";
+import { channelName, query, relativeTime, titleCase } from "../lib";
 import type { Priority, SystemInfo, Team, TicketPage } from "../types";
 import { BoxIcon, ChannelIcon, FlameIcon, InboxIcon, PlusIcon, SparkIcon, UserIcon } from "../icons";
-import { Chip, Dialog, Empty, ErrorState, Field, PageHead, PriorityMark, SkeletonRows, Stat, StatusBadge } from "../ui";
+import { Compass, firstName, greeting, TeaCup } from "../brand";
+import { Avatar, Chip, Dialog, Empty, ErrorState, Field, PriorityMark, SkeletonRows, Stat, StatusBadge } from "../ui";
 
 type View = "active" | "mine" | "unassigned" | "all";
 type Stats = { active: number; new: number; unassigned: number; mine: number; urgent: number; no_system: number };
@@ -126,8 +127,32 @@ function NewTicket({
   );
 }
 
+/** One plain sentence about the queue, so the numbers below read as a story. */
+function QueueSummary({ stats }: { stats: Stats }) {
+  if (stats.active === 0) return <>Your queues are clear. Nothing is waiting.</>;
+  const parts: ReactNode[] = [];
+  if (stats.urgent) parts.push(<strong key="u">{stats.urgent} urgent</strong>);
+  if (stats.mine) parts.push(<span key="m">{stats.mine} with you</span>);
+  if (stats.unassigned) parts.push(<span key="w">{stats.unassigned} waiting for someone to pick {stats.unassigned === 1 ? "it" : "them"} up</span>);
+  const total = `${stats.active} open ticket${stats.active === 1 ? "" : "s"}`;
+  if (parts.length === 0) return <>{total}, all in hand.</>;
+  return (
+    <>
+      {total} —{" "}
+      {parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 && (i === parts.length - 1 ? " and " : ", ")}
+          {part}
+        </span>
+      ))}
+      .
+    </>
+  );
+}
+
 export function InboxPage() {
   const { api, me, can } = useApp();
+  const name = firstName(me.display_name);
   const [view, setView] = useState<View>("active");
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
@@ -200,18 +225,29 @@ export function InboxPage() {
   const data = page.data;
   return (
     <>
-      <PageHead
-        title="Inbox"
-        sub={data ? `${data.total} ticket${data.total === 1 ? "" : "s"}` : undefined}
-        actions={
-          can("ticket:create") && (
+      <header className="page-head hello">
+        <div>
+          <h1>
+            {greeting()}
+            {name ? (
+              <>
+                , <em>{name}</em>.
+              </>
+            ) : (
+              "."
+            )}
+          </h1>
+          <p>{stats.data ? <QueueSummary stats={stats.data} /> : "\u00a0"}</p>
+        </div>
+        {can("ticket:create") && (
+          <div className="page-actions">
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <PlusIcon />
               New ticket
             </button>
-          )
-        }
-      />
+          </div>
+        )}
+      </header>
       <div className="stats">
         <Stat label="Active" value={stats.data?.active} icon={<InboxIcon size={18} />} tone="accent"
           active={view === "active" && !urgentOnly && !system} onClick={() => show("active")} />
@@ -276,7 +312,17 @@ export function InboxPage() {
       ) : !data ? (
         <SkeletonRows />
       ) : data.items.length === 0 ? (
-        <Empty title="Nothing here" hint={term ? "No ticket matches your search." : "You are all caught up."} />
+        term || system || urgentOnly ? (
+          <Empty
+            art={<Compass />}
+            title={term ? `Nothing matches “${term}”` : "Nothing matches this filter"}
+            hint={term ? "Try a ticket key such as ZEN-12, or fewer words." : "Try another view, or clear the filter."}
+          />
+        ) : view === "mine" ? (
+          <Empty art={<TeaCup />} title="Nothing on your plate" hint="Nothing is assigned to you right now. The unassigned queue may need a hand." />
+        ) : (
+          <Empty art={<TeaCup />} title="All caught up" hint="Nothing is waiting. A good moment for a cup of tea." />
+        )
       ) : (
         <div className={`card table-card${page.loading ? " is-loading" : ""}`}>
           <table className="table">
@@ -287,8 +333,7 @@ export function InboxPage() {
                 <th>Priority</th>
                 <th>System</th>
                 <th>Category</th>
-                <th>Team</th>
-                <th>Assignee</th>
+                <th>With</th>
                 <th>Updated</th>
               </tr>
             </thead>
@@ -302,7 +347,7 @@ export function InboxPage() {
                     </a>
                     <span className="cell-sub">
                       <ChannelIcon channel={t.channel} />
-                      {t.requester ? t.requester.display_name : "Internal"} · {titleCase(t.channel)}
+                      {t.requester ? t.requester.display_name : "Internal"} · {channelName(t.channel)}
                     </span>
                   </td>
                   <td>
@@ -329,8 +374,15 @@ export function InboxPage() {
                       <span className="muted">–</span>
                     )}
                   </td>
-                  <td>{t.team_name ?? <span className="muted">Triage</span>}</td>
-                  <td>{t.assignee_name ?? <span className="muted">Unassigned</span>}</td>
+                  <td>
+                    <span className="owner">
+                      {t.assignee_name ? <Avatar name={t.assignee_name} size="sm" /> : <span className="owner-empty" aria-hidden="true" />}
+                      <span className="owner-text">
+                        <span className={t.assignee_name ? "" : "muted"}>{t.assignee_name ?? "Nobody yet"}</span>
+                        <span className="cell-sub">{t.team_name ?? "Triage"}</span>
+                      </span>
+                    </span>
+                  </td>
                   <td className="muted nowrap">{relativeTime(t.updated_at)}</td>
                 </tr>
               ))}

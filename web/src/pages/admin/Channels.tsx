@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { cleanValues, initialValues, SchemaForm, type JsonSchema } from "../../components/SchemaForm";
 import { useApp, useLoad } from "../../context";
 import { AlertIcon, CheckIcon } from "../../icons";
-import { relativeTime, titleCase } from "../../lib";
+import { channelName, relativeTime, titleCase } from "../../lib";
 import type { ConnectorInfo, Diagnostic, Source, SystemInfo, Team } from "../../types";
 import { Chip, Dialog, Empty, ErrorState, Field, Spinner } from "../../ui";
 import { useAction, useDelete } from "./shared";
@@ -81,7 +81,7 @@ function ChannelDialog({
               <select value={connectorName} onChange={(e) => setConnectorName(e.target.value)}>
                 {connectors.map((c) => (
                   <option key={c.name} value={c.name}>
-                    {titleCase(c.name)}
+                    {channelName(c.name)}
                   </option>
                 ))}
               </select>
@@ -174,7 +174,7 @@ function ChannelCard({ source, onEdit, onChanged, onToken }: { source: Source; o
     <div className="card panel">
       <header className="panel-head">
         <h2>{source.name}</h2>
-        <Chip>{titleCase(source.connector)}</Chip>
+        <Chip>{channelName(source.connector)}</Chip>
         <Health source={source} />
       </header>
 
@@ -269,7 +269,7 @@ export function Channels() {
           Add channel
         </button>
       </div>
-      {sources.data.length === 0 && <Empty title="No channels connected" hint="Add e-mail, Teams or a webhook to receive tickets." />}
+      {sources.data.length === 0 && <Empty title="No channels yet" hint="Connect a mailbox, a Teams channel or a webhook, and issues will start arriving in the inbox." />}
       {sources.data.map((source) => (
         <ChannelCard key={source.id} source={source} onEdit={() => setEditing(source)} onChanged={sources.reload} onToken={setIssued} />
       ))}

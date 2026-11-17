@@ -31,6 +31,20 @@ export function titleCase(value: string): string {
   return value.replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
+const CONNECTOR_NAMES: Record<string, string> = {
+  email_graph: "Microsoft 365 mail",
+  teams: "Microsoft Teams",
+  webhook: "Webhook",
+  slack: "Slack",
+  manual: "Created by hand",
+  mcp: "AI agent",
+};
+
+/** The human name for a channel type ("email_graph" → "Microsoft 365 mail"). */
+export function channelName(name: string): string {
+  return CONNECTOR_NAMES[name] ?? titleCase(name);
+}
+
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const first = parts[0]?.[0] ?? "?";

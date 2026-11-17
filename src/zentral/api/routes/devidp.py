@@ -30,12 +30,43 @@ from zentral.security.devauth import PERSONAS, LocalIssuer
 
 CLIENT_ID = "zentral-dev"
 _CODE_TTL = 60
-_CSS = (
-    "body{font:15px system-ui,sans-serif;max-width:26rem;margin:12vh auto;padding:0 1rem}"
-    "a{display:block;padding:.7rem 1rem;margin:.4rem 0;border:1px solid #ccd;border-radius:8px;"
-    "text-decoration:none;color:#223}a:hover{background:#eef}"
-    ".warn{background:#fff4d6;color:#7a5200;padding:.6rem .8rem;border-radius:8px}"
+_CSS = """
+:root{--bg:#f6f2ea;--card:#fffdf8;--ink:#221e19;--muted:#6f675b;--line:#e5dccc;--pine:#1f6b5a;--saffron:#d98f22}
+@media (prefers-color-scheme:dark){:root{--bg:#15130f;--card:#1e1b16;--ink:#f0e9dc;--muted:#a99f8f;--line:#36312a;--pine:#7cc8ab}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);
+font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px}
+main{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px;
+box-shadow:0 18px 48px rgb(40 30 15 / 12%)}
+.brand{display:flex;align-items:center;gap:10px;font:600 22px/1 Georgia,serif;margin-bottom:22px}
+h1{font:500 26px/1.2 Georgia,serif;margin:0 0 6px}
+p{margin:0 0 18px;color:var(--muted)}
+.warn{background:rgb(217 143 34 / 14%);color:#93600c;padding:10px 12px;border-radius:10px;font-size:13px}
+@media (prefers-color-scheme:dark){.warn{color:#f0c060}}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+a{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);
+border-radius:12px;text-decoration:none;color:var(--ink);transition:border-color .15s,transform .06s}
+a:hover{border-color:var(--pine)}a:active{transform:translateY(1px)}
+a:focus-visible{outline:2px solid var(--saffron);outline-offset:2px}
+a strong{font-weight:600}a small{color:var(--muted)}a span{color:var(--muted);font-size:13px;text-align:right}
+"""
+
+_MARK = (
+    '<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">'
+    '<rect width="32" height="32" rx="9" fill="#1f6b5a"/>'
+    '<path d="M10 10.5h12L10 21.5h12" fill="none" stroke="#f6efe2" stroke-width="2.6" '
+    'stroke-linecap="round" stroke-linejoin="round"/>'
+    '<circle cx="16" cy="16" r="2.7" fill="#e9a83a"/></svg>'
 )
+
+_ROLE_LINES = {
+    "Zentral.Admin": "Sets up teams, systems and channels",
+    "Zentral.Agent": "Works the queue",
+    "Zentral.Viewer": "Reads tickets, personal data masked",
+    "Zentral.Auditor": "Reads the audit trail only",
+    "Zentral.PrivacyOfficer": "Handles access and erasure requests",
+    "Zentral.Automation": "An AI agent's view: masked, cannot reply",
+}
 
 
 class _PersonaIn(BaseModel):
@@ -100,16 +131,22 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
                 "state": state,
             }
             links = "".join(
-                f'<a href="?{escape(urlencode({**params, "persona": name}))}">'
-                f"{escape(spec['name'])} <small>({escape(name)})</small></a>"
+                f'<li><a href="?{escape(urlencode({**params, "persona": name}))}">'
+                f"<strong>{escape(spec['name'])} <small>({escape(name)})</small></strong>"
+                f"<span>{escape(_ROLE_LINES.get(str(spec['roles'][0]), ''))}</span></a></li>"
                 for name, spec in PERSONAS.items()
             )
             return HTMLResponse(
                 '<!doctype html><html lang="en"><meta charset="utf-8">'
-                "<title>Zentral development sign-in</title>"
-                '<link rel="stylesheet" href="style.css"><h1>Sign in</h1>'
-                '<p class="warn">Development identity provider. Sign-in is simulated — '
-                "never expose this instance to a network.</p>" + links + "</html>"
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                "<title>Sign in · Zentral</title>"
+                '<link rel="stylesheet" href="style.css"><main>'
+                f'<div class="brand">{_MARK} Zentral</div>'
+                "<h1>Who are you today?</h1>"
+                "<p>Pick a person to try Zentral as. Each sees exactly what their role allows.</p>"
+                '<p class="warn">Development sign-in: anyone who can reach this page can '
+                "be anyone. Never expose this instance to a network.</p>"
+                f"<ul>{links}</ul></main></html>"
             )
         if persona not in PERSONAS:
             raise HTTPException(400, "unknown persona")

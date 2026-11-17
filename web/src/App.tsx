@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Api } from "./api";
 import { loadConfig, startSession, type Session } from "./auth";
+import { Wordmark } from "./brand";
 import { ConfirmProvider } from "./components/Confirm";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppContext, type AppState } from "./context";
@@ -108,8 +109,8 @@ export function App() {
       </a>
       <div className="shell">
         <aside className="sidebar">
-          <a className="brand" href="#/">
-            <span className="brand-mark">Z</span> Zentral
+          <a className="brand" href="#/" aria-label="Zentral home">
+            <Wordmark />
           </a>
           {state.config.auth.mode === "dev" && <p className="warning-banner small">Development sign-in</p>}
           <nav aria-label="Main">

@@ -39,7 +39,7 @@ export function Teams() {
         </Field>
         <button className="btn btn-primary">Add team</button>
       </form>
-      {teams.data.length === 0 && <Empty title="No teams yet" hint="Without teams, every ticket stays in triage." />}
+      {teams.data.length === 0 && <Empty title="No teams yet" hint="Teams are the queues people work. Until there is one, every ticket waits in triage." />}
       {teams.data.map((team) => (
         <div key={team.id} className="card panel">
           <header className="panel-head">

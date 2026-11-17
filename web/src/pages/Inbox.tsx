@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useApp, useLoad } from "../context";
-import { channelName, query, relativeTime, titleCase } from "../lib";
-import type { Priority, SystemInfo, Team, TicketPage } from "../types";
-import { BoxIcon, ChannelIcon, FlameIcon, InboxIcon, PlusIcon, SparkIcon, UserIcon } from "../icons";
+import { channelName, query, relativeTime, titleCase, until } from "../lib";
+import type { Priority, SystemInfo, Team, Ticket, TicketPage } from "../types";
+import { BoxIcon, ChannelIcon, ClockIcon, InboxIcon, PlusIcon, SparkIcon, UserIcon } from "../icons";
 import { Compass, firstName, greeting, TeaCup } from "../brand";
 import { Avatar, Chip, Dialog, Empty, ErrorState, Field, PriorityMark, SkeletonRows, Stat, StatusBadge } from "../ui";
 
 type View = "active" | "mine" | "unassigned" | "all";
-type Stats = { active: number; new: number; unassigned: number; mine: number; urgent: number; no_system: number };
+type Stats = { active: number; new: number; unassigned: number; mine: number; urgent: number; no_system: number; overdue: number };
 const VIEWS: { id: View; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "mine", label: "Assigned to me" },
@@ -127,10 +127,33 @@ function NewTicket({
   );
 }
 
+/** The next promise on a ticket: a first reply, then a resolution. */
+function Due({ ticket: t }: { ticket: Ticket }) {
+  if (t.response_state === "breached" && t.response_due_at)
+    return <span className="due due-late">Reply overdue · {until(t.response_due_at).text}</span>;
+  if (t.response_state === "due" && t.response_due_at) {
+    const next = until(t.response_due_at);
+    return <span className={`due${dueSoon(t.response_due_at) ? " due-soon" : ""}`}>Reply {next.text}</span>;
+  }
+  if (t.resolve_state === "breached" && t.resolve_due_at)
+    return <span className="due due-late">Overdue · {until(t.resolve_due_at).text}</span>;
+  if (t.resolve_state === "paused") return <span className="due due-paused">Waiting on requester</span>;
+  if (t.resolve_state === "due" && t.resolve_due_at)
+    return <span className={`due${dueSoon(t.resolve_due_at) ? " due-soon" : ""}`}>Resolve {until(t.resolve_due_at).text}</span>;
+  if (t.resolve_state === "met") return <span className="due due-met">Resolved on time</span>;
+  if (t.resolve_state === "late") return <span className="due">Resolved late</span>;
+  return <span className="muted">–</span>;
+}
+
+function dueSoon(iso: string): boolean {
+  return new Date(iso).getTime() - Date.now() < 60 * 60 * 1000;
+}
+
 /** One plain sentence about the queue, so the numbers below read as a story. */
 function QueueSummary({ stats }: { stats: Stats }) {
   if (stats.active === 0) return <>Your queues are clear. Nothing is waiting.</>;
   const parts: ReactNode[] = [];
+  if (stats.overdue) parts.push(<strong key="o">{stats.overdue} overdue</strong>);
   if (stats.urgent) parts.push(<strong key="u">{stats.urgent} urgent</strong>);
   if (stats.mine) parts.push(<span key="m">{stats.mine} with you</span>);
   if (stats.unassigned) parts.push(<span key="w">{stats.unassigned} waiting for someone to pick {stats.unassigned === 1 ? "it" : "them"} up</span>);
@@ -159,7 +182,7 @@ export function InboxPage() {
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
   const [system, setSystem] = useState("");
-  const [urgentOnly, setUrgentOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // "/" jumps to search, like most tools people already use.
@@ -192,12 +215,12 @@ export function InboxPage() {
       offset,
       assignee_id: view === "mine" ? me.subject : undefined,
       unassigned: view === "unassigned",
-      priority: urgentOnly ? "urgent" : undefined,
+      overdue: overdueOnly,
       system_id: system && system !== "none" ? system : undefined,
       no_system: system === "none",
     });
     return api.get<TicketPage>(`/tickets${base}${view === "all" ? "" : ACTIVE}`);
-  }, [view, term, offset, system, urgentOnly]);
+  }, [view, term, offset, system, overdueOnly]);
   const stats = useLoad(() => api.get<Stats>("/tickets/stats"), [page.data]);
   const [fresh, setFresh] = useState(false);
   const shownActive = stats.data?.active;
@@ -215,9 +238,9 @@ export function InboxPage() {
     return () => window.clearInterval(timer);
   }, [api, shownActive]);
 
-  function show(next: View, opts: { urgent?: boolean; system?: string } = {}) {
+  function show(next: View, opts: { overdue?: boolean; system?: string } = {}) {
     setView(next);
-    setUrgentOnly(opts.urgent ?? false);
+    setOverdueOnly(opts.overdue ?? false);
     setSystem(opts.system ?? "");
     setOffset(0);
   }
@@ -250,9 +273,9 @@ export function InboxPage() {
       </header>
       <div className="stats">
         <Stat label="Active" value={stats.data?.active} icon={<InboxIcon size={18} />} tone="accent"
-          active={view === "active" && !urgentOnly && !system} onClick={() => show("active")} />
-        <Stat label="Urgent" value={stats.data?.urgent} icon={<FlameIcon size={18} />} tone="danger"
-          active={urgentOnly} onClick={() => show("active", { urgent: true })} />
+          active={view === "active" && !overdueOnly && !system} onClick={() => show("active")} />
+        <Stat label="Overdue" value={stats.data?.overdue} icon={<ClockIcon size={18} />} tone="danger"
+          active={overdueOnly} onClick={() => show("active", { overdue: true })} />
         <Stat label="Unassigned" value={stats.data?.unassigned} icon={<UserIcon size={18} />} tone="warn"
           active={view === "unassigned"} onClick={() => show("unassigned")} />
         <Stat label="Assigned to me" value={stats.data?.mine} icon={<SparkIcon size={18} />} tone="ok"
@@ -312,7 +335,7 @@ export function InboxPage() {
       ) : !data ? (
         <SkeletonRows />
       ) : data.items.length === 0 ? (
-        term || system || urgentOnly ? (
+        term || system || overdueOnly ? (
           <Empty
             art={<Compass />}
             title={term ? `Nothing matches “${term}”` : "Nothing matches this filter"}
@@ -329,12 +352,11 @@ export function InboxPage() {
             <thead>
               <tr>
                 <th>Ticket</th>
-                <th>Status</th>
-                <th>Priority</th>
+                <th>State</th>
                 <th>System</th>
                 <th>Category</th>
                 <th>With</th>
-                <th>Updated</th>
+                <th>Due</th>
               </tr>
             </thead>
             <tbody>
@@ -351,10 +373,10 @@ export function InboxPage() {
                     </span>
                   </td>
                   <td>
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td>
-                    <PriorityMark priority={t.priority} />
+                    <div className="state-cell">
+                      <StatusBadge status={t.status} />
+                      <PriorityMark priority={t.priority} />
+                    </div>
                   </td>
                   <td>
                     {t.system_name ? (
@@ -383,7 +405,10 @@ export function InboxPage() {
                       </span>
                     </span>
                   </td>
-                  <td className="muted nowrap">{relativeTime(t.updated_at)}</td>
+                  <td className="nowrap">
+                    <Due ticket={t} />
+                    <span className="cell-sub">updated {relativeTime(t.updated_at)}</span>
+                  </td>
                 </tr>
               ))}
             </tbody>

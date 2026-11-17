@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from zentral.connectors.base import InboundMessage
 from zentral.db.models import (
+    DeliveryStatus,
     IngestSource,
     Job,
     Message,
@@ -25,6 +26,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.security.crypto import get_cipher
+from zentral.services import sla
 from zentral.services.context import Ctx
 from zentral.services.tickets import apply_system, get_or_create_contact, ticket_key
 from zentral.text import clean_text, single_line
@@ -84,8 +86,11 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             apply_system(ticket, system)
         ctx.session.add(ticket)
         await ctx.session.flush()
+        sla.refresh_targets(ticket, ctx.settings)
     else:
         if ticket.status in (TicketStatus.RESOLVED, TicketStatus.PENDING):
+            # The requester answered: the ball is back with the desk.
+            sla.status_changed(ticket, ticket.status, TicketStatus.OPEN, ctx.settings)
             ticket.status = TicketStatus.OPEN
             ticket.resolved_at = None
         ticket.updated_at = utcnow()
@@ -117,6 +122,8 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
 
     if created:
         ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
+        if contact is not None and contact.email and source.config.get("acknowledge_new_tickets"):
+            await _acknowledge(ctx, source, ticket)
     ctx.audit(
         "ticket.ingested" if created else "ticket.message_received",
         "ticket",
@@ -125,6 +132,37 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
         connector=source.connector,
     )
     return IngestOutcome(ticket.id, ticket_key(ctx, ticket.id), created=created)
+
+
+DEFAULT_ACKNOWLEDGEMENT = (
+    "Thank you for getting in touch. Your request has been logged as {ticket_key}, "
+    "and someone from the service desk will get back to you.\n\n"
+    "To add information, reply to this message and keep {ticket_key} in the subject."
+)
+
+
+async def _acknowledge(ctx: Ctx, source: IngestSource, ticket: Ticket) -> None:
+    """Tell the requester their request arrived, and its reference.
+
+    Queued like any reply (so it is delivered, retried and audited the same
+    way) and visible in the conversation. It is authored by Zentral itself and
+    deliberately does not count as the desk's first response.
+    """
+    template = str(source.config.get("acknowledgement_text") or DEFAULT_ACKNOWLEDGEMENT)
+    # str.replace, not str.format: the template is administrator text and must
+    # not be able to reach anything but this one placeholder.
+    body = template.replace("{ticket_key}", ticket_key(ctx, ticket.id))[:5000]
+    message = Message(
+        ticket_id=ticket.id,
+        kind=MessageKind.OUTBOUND,
+        body=body,
+        source_id=source.id,
+        delivery_status=DeliveryStatus.PENDING,
+    )
+    ctx.session.add(message)
+    await ctx.session.flush()
+    ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
+    ctx.audit("ticket.acknowledged", "ticket", ticket.id, message_id=str(message.id))
 
 
 async def _resolve_system(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> System | None:

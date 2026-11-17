@@ -189,7 +189,15 @@ async def test_stats_respect_scope(client, auth):
     )
 
     agent = (await client.get("/api/v1/tickets/stats", headers=auth("agent"))).json()
-    assert agent == {"active": 2, "new": 1, "unassigned": 1, "mine": 1, "urgent": 1, "no_system": 2}
+    assert agent == {
+        "active": 2,
+        "new": 1,
+        "unassigned": 1,
+        "mine": 1,
+        "urgent": 1,
+        "no_system": 2,
+        "overdue": 0,
+    }
     admin = (await client.get("/api/v1/tickets/stats", headers=auth("admin"))).json()
     assert (admin["active"], admin["urgent"], admin["mine"]) == (3, 2, 0)
     empty = (await client.get("/api/v1/tickets/stats", headers=auth("viewer"))).json()

@@ -38,12 +38,20 @@ from typing import Annotated, Any, ClassVar, Literal
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from zentral.connectors.base import (
     Capability,
     Connector,
     ConnectorError,
+    ConnectorRejected,
     Diagnostic,
     InboundMessage,
     OutboundMessage,
@@ -159,6 +167,17 @@ class GraphMailConfig(BaseModel):
         title="Allowed recipient domains",
         description="Only send replies to these domains. Empty allows replying to any requester.",
     )
+    acknowledge_new_tickets: bool = Field(
+        default=True,
+        title="Acknowledge new requests",
+        description="Reply automatically to each new request with its ticket number, so the requester knows it arrived.",
+    )
+    acknowledgement_text: str = Field(
+        default="",
+        max_length=2000,
+        title="Acknowledgement text",
+        description="Leave empty for the standard text. {ticket_key} is replaced by the ticket number.",
+    )
     save_to_sent_items: bool = Field(
         default=True,
         title="Save replies to Sent Items",
@@ -167,6 +186,12 @@ class GraphMailConfig(BaseModel):
     page_size: int = Field(
         default=25, ge=1, le=50, title="Batch size", description="Messages fetched per poll."
     )
+
+    @model_validator(mode="after")
+    def _acknowledgement_needs_replies(self) -> GraphMailConfig:
+        if self.acknowledge_new_tickets and not self.send_replies:
+            raise ValueError("acknowledging new requests needs 'send replies' to be on")
+        return self
 
     _normalise = field_validator(
         "allowed_sender_domains", "allowed_recipient_domains", "blocked_senders", mode="before"
@@ -435,13 +460,13 @@ class GraphMailConnector(Connector):
     async def send(self, message: OutboundMessage) -> None:
         cfg = self.config
         if not cfg.send_replies:
-            raise ConnectorError("replies are disabled for this channel")
+            raise ConnectorRejected("replies are disabled for this channel")
         if not message.recipient_email:
-            raise ConnectorError("requester has no e-mail address")
+            raise ConnectorRejected("requester has no e-mail address")
         if cfg.allowed_recipient_domains and not _matches(
             message.recipient_email, cfg.allowed_recipient_domains
         ):
-            raise ConnectorError("recipient domain is not on this channel's allow-list")
+            raise ConnectorRejected("recipient domain is not on this channel's allow-list")
         await self.verify_scope()
         await self._request(
             "POST",

@@ -7,7 +7,7 @@ unexpected input is rejected at the edge.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -72,6 +72,12 @@ class TicketOut(Out):
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None
+    # Service-level targets. States: met, late, due, breached, paused, none.
+    response_due_at: datetime | None = None
+    response_state: str = "none"
+    first_response_at: datetime | None = None
+    resolve_due_at: datetime | None = None
+    resolve_state: str = "none"
     pii_redacted: bool
 
 
@@ -101,6 +107,42 @@ class ActivityOut(Out):
     actor_kind: str
     channel: str
     details: dict[str, Any]
+
+
+class CountOut(Out):
+    label: str
+    count: int
+
+
+class DayOut(Out):
+    day: date
+    created: int
+    resolved: int
+
+
+class TargetOut(Out):
+    met: int
+    missed: int
+    rate: float | None  # met / (met + missed); None when nothing was measured
+
+
+class InsightsOut(Out):
+    days: int
+    created: int
+    resolved: int
+    open_now: int
+    overdue_now: int
+    waiting_on_requester: int
+    oldest_open_days: int | None
+    median_first_response_minutes: int | None
+    median_resolution_hours: float | None
+    first_response: TargetOut
+    resolution: TargetOut
+    timeline: list[DayOut]
+    by_system: list[CountOut]
+    by_category: list[CountOut]
+    by_channel: list[CountOut]
+    by_priority: list[CountOut]
 
 
 class TicketCreate(In):

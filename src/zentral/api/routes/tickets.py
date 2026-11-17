@@ -10,6 +10,7 @@ from zentral.db.models import TicketPriority, TicketStatus
 from zentral.schemas import (
     ActivityOut,
     Email,
+    InsightsOut,
     MessageCreate,
     MessageOut,
     TicketCreate,
@@ -17,7 +18,7 @@ from zentral.schemas import (
     TicketPage,
     TicketUpdate,
 )
-from zentral.services import tickets
+from zentral.services import insights, tickets
 from zentral.services.tickets import TicketFilter
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -34,6 +35,7 @@ async def list_tickets(
     system_id: uuid.UUID | None = None,
     no_system: bool = False,
     unassigned: bool = False,
+    overdue: bool = False,
     requester_email: Email | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -50,6 +52,7 @@ async def list_tickets(
             system_id=system_id,
             no_system=no_system,
             unassigned=unassigned,
+            overdue=overdue,
             requester_email=requester_email,
             q=q,
             limit=limit,
@@ -65,6 +68,13 @@ async def create_ticket(ctx: CtxDep, data: TicketCreate) -> TicketOut:
     ticket = await tickets.create_ticket(ctx, data)
     await ctx.commit()
     return ticket
+
+
+@router.get("/insights")
+async def ticket_insights(
+    ctx: CtxDep, days: Annotated[int, Query(ge=7, le=365)] = 30
+) -> InsightsOut:
+    return await insights.insights(ctx, days)
 
 
 @router.get("/stats")

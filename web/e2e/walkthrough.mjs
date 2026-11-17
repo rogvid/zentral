@@ -139,8 +139,20 @@ await as(browser, "admin", async (page) => {
   await themeButton(page).click();
   check((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "theme switch reaches dark");
   await shot(page, "inbox-dark");
-  await page.getByRole("button", { name: /Urgent/ }).click();
-  await page.waitForFunction(() => document.querySelectorAll(".table tbody tr").length === 1);
+  await page.getByRole("button", { name: /Overdue/ }).click();
+  await page
+    .waitForFunction(
+      () => {
+        const cells = [...document.querySelectorAll(".table tbody tr td:last-child .due")];
+        return cells.length > 0 && cells.every((cell) => /overdue/i.test(cell.textContent ?? ""));
+      },
+      undefined,
+      { timeout: 10000 },
+    )
+    .catch(() => undefined);
+  const dues = await page.locator(".table tbody tr td:last-child .due, .table tbody tr td:last-child > .muted").allInnerTexts();
+  check(dues.every((text) => /overdue/i.test(text)), `overdue filter shows only overdue tickets (saw ${JSON.stringify([...new Set(dues)])})`);
+  await page.getByRole("button", { name: /Active/ }).click();
   await go(page, "tickets/2");
   await page.waitForSelector(".thread .msg");
   await shot(page, "ticket-dark");
@@ -196,6 +208,19 @@ await as(browser, "admin", async (page) => {
   await rule.getByRole("button", { name: "Turn on" }).waitFor();
   await rule.getByRole("button", { name: "Turn on" }).click();
   await rule.getByRole("button", { name: "Turn off" }).waitFor();
+
+  // Insights: a chart with a keyboard-reachable crosshair, and the same data as a table.
+  await go(page, "insights");
+  await page.locator(".chart-svg path.series-line").first().waitFor();
+  check((await page.locator(".tile").count()) === 8, "insights shows its eight figures");
+  await page.locator(".chart-svg[role=img]").first().focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.locator(".tooltip").waitFor();
+  await page.locator(".bar-mark").first().waitFor();
+  await shot(page, "insights");
+  await page.getByRole("button", { name: "Show as table" }).click();
+  check((await page.locator(".table-scroll tbody tr").count()) >= 30, "insights table view lists every day");
+  await page.getByRole("button", { name: "Show chart" }).click();
 
   await go(page, "audit");
   await page.waitForSelector(".table tbody tr");

@@ -206,6 +206,13 @@ class Ticket(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     scrubbed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
+    # Service-level targets (see zentral.services.sla).
+    response_due_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    resolve_due_at: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
+    first_response_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    paused_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     requester: Mapped[Contact | None] = relationship(lazy="joined")
     team: Mapped[Team | None] = relationship(lazy="joined")
     system: Mapped[System | None] = relationship(lazy="joined")

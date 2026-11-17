@@ -99,6 +99,9 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_STATIC_DIR` | *(none)* | str, optional |
 | `ZENTRAL_TICKET_PREFIX` | `ZEN` | str |
 | `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE` | `False` | bool |
+| `ZENTRAL_SLA_RESPONSE_HOURS` | `{'urgent': 1.0, 'high': 4.0, 'normal': 8.0, 'low': 24.0}` | dict[str, float] |
+| `ZENTRAL_SLA_RESOLVE_HOURS` | `{'urgent': 8.0, 'high': 24.0, 'normal': 72.0, 'low': 168.0}` | dict[str, float] |
+| `ZENTRAL_AUTO_CLOSE_DAYS` | `7` | int |
 | `ZENTRAL_AUTH_MODE` | `entra` | one of ['entra', 'oidc', 'dev'] |
 | `ZENTRAL_ROLE_MAP` | *(empty)* | dict[str, str] |
 | `ZENTRAL_ENTRA_TENANT_ID` | *(empty)* | str |

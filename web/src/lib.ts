@@ -4,6 +4,7 @@ export type Route =
   | { page: "inbox" }
   | { page: "ticket"; id: number }
   | { page: "audit" }
+  | { page: "insights" }
   | { page: "privacy" }
   | { page: "admin" };
 
@@ -11,7 +12,7 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   const ticket = /^tickets\/(\d{1,12})$/.exec(path);
   if (ticket) return { page: "ticket", id: Number(ticket[1]) };
-  if (path === "audit" || path === "privacy" || path === "admin") return { page: path };
+  if (path === "audit" || path === "privacy" || path === "admin" || path === "insights") return { page: path };
   return { page: "inbox" };
 }
 
@@ -57,6 +58,22 @@ export function hue(name: string): number {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
   return hash % 6;
+}
+
+/** "12 min", "3.5 h", "2.4 days" — a duration in the unit a person would use. */
+export function duration(minutes: number | null): string {
+  if (minutes === null) return "–";
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const h = minutes / 60;
+  if (h < 48) return `${Math.round(h * 10) / 10} h`;
+  return `${Math.round((h / 24) * 10) / 10} days`;
+}
+
+/** "in 40 min", "2 h ago" — relative to now, for deadlines. */
+export function until(iso: string, now: Date = new Date()): { text: string; past: boolean } {
+  const minutes = (new Date(iso).getTime() - now.getTime()) / 60000;
+  const span = duration(Math.abs(minutes)).replace(" days", "d").replace(" h", "h").replace(" min", "m");
+  return minutes >= 0 ? { text: `in ${span}`, past: false } : { text: `${span} ago`, past: true };
 }
 
 export function percent(value: number | null): string {

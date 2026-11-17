@@ -73,6 +73,27 @@ describe("visual helpers", () => {
 
 import { cleanValues, initialValues, parseList } from "./components/SchemaForm";
 
+import { compact, niceMax } from "./components/charts";
+import { duration, until } from "./lib";
+
+describe("time and numbers", () => {
+  it("expresses durations in human units", () => {
+    expect(duration(null)).toBe("–");
+    expect(duration(42)).toBe("42 min");
+    expect(duration(210)).toBe("3.5 h");
+    expect(duration(60 * 60)).toBe("2.5 days");
+  });
+  it("describes deadlines relative to now", () => {
+    const now = new Date("2026-11-17T12:00:00Z");
+    expect(until("2026-11-17T12:40:00Z", now)).toEqual({ text: "in 40m", past: false });
+    expect(until("2026-11-17T09:00:00Z", now)).toEqual({ text: "3h ago", past: true });
+  });
+  it("chooses clean axis bounds and compact labels", () => {
+    expect([niceMax(0), niceMax(3), niceMax(7), niceMax(12), niceMax(480)]).toEqual([1, 5, 10, 20, 500]);
+    expect([compact(950), compact(12_900)]).toEqual(["950", "12.9K"]);
+  });
+});
+
 describe("schema-driven forms", () => {
   const schema = {
     required: ["mailbox"],

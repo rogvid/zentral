@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true
@@ -35,6 +36,7 @@ from zentral.schemas import (
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
 from zentral.security.redaction import redact
+from zentral.services import sla
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound, PermissionDenied, ValidationFailed
 
@@ -54,6 +56,7 @@ class TicketFilter:
     system_id: uuid.UUID | None = None
     no_system: bool = False
     unassigned: bool = False
+    overdue: bool = False
     requester_email: str | None = None
     q: str | None = None
     limit: int = 50
@@ -120,6 +123,7 @@ async def _user_names(ctx: Ctx, ids: set[str]) -> dict[str, str]:
 
 def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
     pii = ctx.can(P.TICKET_READ_PII)
+    response, resolve = sla.response_view(ticket), sla.resolve_view(ticket)
     requester = None
     if ticket.requester is not None:
         contact = ticket.requester
@@ -158,6 +162,11 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
         resolved_at=ticket.resolved_at,
+        response_due_at=response.due_at,
+        response_state=response.state,
+        first_response_at=ticket.first_response_at,
+        resolve_due_at=resolve.due_at,
+        resolve_state=resolve.state,
         pii_redacted=not pii,
     )
 
@@ -197,6 +206,8 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
         where.append(Ticket.system_id.is_(None))
     if f.unassigned:
         where.append(Ticket.assignee_id.is_(None))
+    if f.overdue:
+        where.append(overdue_clause())
     if f.requester_email:
         # Looking tickets up by a person's e-mail is a personal-data operation.
         ctx.require(P.TICKET_READ_PII, "ticket")
@@ -241,6 +252,22 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
 ACTIVE_STATUSES = (TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.PENDING)
 
 
+def overdue_clause() -> ColumnElement[bool]:
+    """Active tickets past a target: no first reply in time, or not resolved in time."""
+    now = utcnow()
+    return and_(
+        Ticket.status.in_(ACTIVE_STATUSES),
+        or_(
+            and_(
+                Ticket.first_response_at.is_(None),
+                Ticket.requester_id.is_not(None),
+                Ticket.response_due_at < now,
+            ),
+            and_(Ticket.paused_at.is_(None), Ticket.resolve_due_at < now),
+        ),
+    )
+
+
 async def ticket_stats(ctx: Ctx) -> dict[str, int]:
     """Counts of active tickets in the caller's scope, for the inbox overview.
     Aggregates only — no ticket content — so this is not written to the audit trail."""
@@ -258,6 +285,7 @@ async def ticket_stats(ctx: Ctx) -> dict[str, int]:
                 count_if(Ticket.assignee_id == ctx.principal.subject).label("mine"),
                 count_if(Ticket.priority == "urgent").label("urgent"),
                 count_if(Ticket.system_id.is_(None)).label("no_system"),
+                count_if(overdue_clause()).label("overdue"),
             ).where(visible_clause(ctx), Ticket.status.in_(ACTIVE_STATUSES))
         )
     ).one()
@@ -308,6 +336,8 @@ ACTIVITY_ACTIONS = (
     "automation.rule_applied",
     "ticket.note_added",
     "ticket.replied",
+    "ticket.acknowledged",
+    "ticket.auto_closed",
     "message.delivered",
     "message.delivery_failed",
 )
@@ -413,6 +443,7 @@ async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
         apply_system(ticket, await load_system(ctx, data.system_id))
     ctx.session.add(ticket)
     await ctx.session.flush()
+    sla.refresh_targets(ticket, ctx.settings)
     ctx.session.add(
         Message(
             ticket_id=ticket.id,
@@ -452,6 +483,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
         if closing and ctx.settings.require_system_to_resolve and ticket.system_id is None:
             raise ValidationFailed("select the system this ticket concerns before resolving it")
         changed["status"] = [ticket.status, patch.status.value]
+        sla.status_changed(ticket, ticket.status, patch.status, ctx.settings)
         ticket.status = patch.status
         if patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
             ticket.resolved_at = ticket.resolved_at or utcnow()
@@ -460,6 +492,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     if "priority" in fields and patch.priority is not None and patch.priority != ticket.priority:
         changed["priority"] = [ticket.priority, patch.priority.value]
         ticket.priority = patch.priority
+        sla.refresh_targets(ticket, ctx.settings)
     if "category" in fields and patch.category != ticket.category:
         _check_category(ctx, patch.category)
         changed["category"] = [ticket.category, patch.category]
@@ -513,6 +546,8 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
     await ctx.session.flush()
     if delivery == DeliveryStatus.PENDING:
         ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
+    if outbound:
+        sla.responded(ticket)
     if outbound and ticket.status == TicketStatus.NEW:
         ticket.status = TicketStatus.OPEN
     ticket.updated_at = utcnow()
@@ -531,3 +566,31 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
         delivery_status=message.delivery_status,
         created_at=message.created_at,
     )
+
+
+async def auto_close(ctx: Ctx, *, batch: int = 500) -> int:
+    """Close tickets that stayed resolved for ``auto_close_days``.
+
+    A resolved ticket reopens when the requester answers; a closed one does not
+    (their next message starts a new ticket). The grace period is the window in
+    which "that didn't fix it" still lands on the same ticket.
+    """
+    days = ctx.settings.auto_close_days
+    if days <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(days=days)
+    tickets = (
+        (
+            await ctx.session.scalars(
+                select(Ticket)
+                .where(Ticket.status == TicketStatus.RESOLVED, Ticket.resolved_at < cutoff)
+                .limit(batch)
+            )
+        )
+        .unique()
+        .all()
+    )
+    for ticket in tickets:
+        ticket.status = TicketStatus.CLOSED
+        ctx.audit("ticket.auto_closed", "ticket", ticket.id, after_days=days)
+    return len(tickets)

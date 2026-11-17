@@ -30,6 +30,8 @@ DEFAULT_CATEGORIES = (
     "other",
 )
 
+PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
+
 BUILTIN_CONNECTORS = ("webhook", "teams", "email_graph")
 
 # Providers that send data outside the organisation's own infrastructure.
@@ -79,6 +81,15 @@ class Settings(BaseSettings):
     ticket_prefix: str = "ZEN"
     # Governance: a ticket cannot be resolved or closed until it names the system it concerns.
     require_system_to_resolve: bool = False
+    # Service-level targets in calendar hours, per priority. Omit a priority for no target.
+    sla_response_hours: Annotated[dict[str, float], NoDecode, BeforeValidator(_mapping)] = Field(
+        default_factory=lambda: {"urgent": 1.0, "high": 4.0, "normal": 8.0, "low": 24.0}
+    )
+    sla_resolve_hours: Annotated[dict[str, float], NoDecode, BeforeValidator(_mapping)] = Field(
+        default_factory=lambda: {"urgent": 8.0, "high": 24.0, "normal": 72.0, "low": 168.0}
+    )
+    # Resolved tickets close automatically after this many days without a reply (0 = never).
+    auto_close_days: int = Field(default=7, ge=0, le=365)
 
     # --- Authentication -------------------------------------------------------
     # entra: Microsoft Entra ID · oidc: any OpenID Connect provider · dev: built-in dev IdP
@@ -224,6 +235,13 @@ class Settings(BaseSettings):
                 problems.append("the claude_cli AI provider is for local testing only")
             if self.ai_is_cloud and not self.ai_redact_pii:
                 problems.append("PII redaction cannot be disabled for cloud AI providers")
+        for name in ("sla_response_hours", "sla_resolve_hours"):
+            targets: dict[str, float] = getattr(self, name)
+            unknown = set(targets) - PRIORITIES
+            if unknown:
+                problems.append(f"ZENTRAL_{name.upper()}: unknown priority {sorted(unknown)}")
+            if any(hours <= 0 for hours in targets.values()):
+                problems.append(f"ZENTRAL_{name.upper()}: hours must be positive")
         if problems:
             raise ConfigurationError("Unsafe configuration:\n- " + "\n- ".join(problems))
 

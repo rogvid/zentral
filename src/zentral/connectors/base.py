@@ -45,6 +45,10 @@ class ConnectorError(Exception):
     """Operational failure talking to the external system (retried by the worker)."""
 
 
+class ConnectorRejected(ConnectorError):
+    """The channel will never accept this (e.g. recipient not allowed). Not retried."""
+
+
 class WebhookAuthError(Exception):
     """The webhook request could not be authenticated. Always answered with a bare 401."""
 

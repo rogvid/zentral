@@ -56,7 +56,33 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
+  response_due_at: string | null;
+  response_state: TargetState;
+  first_response_at: string | null;
+  resolve_due_at: string | null;
+  resolve_state: TargetState;
   pii_redacted: boolean;
+}
+
+export type TargetState = "met" | "late" | "due" | "breached" | "paused" | "none";
+
+export interface Insights {
+  days: number;
+  created: number;
+  resolved: number;
+  open_now: number;
+  overdue_now: number;
+  waiting_on_requester: number;
+  oldest_open_days: number | null;
+  median_first_response_minutes: number | null;
+  median_resolution_hours: number | null;
+  first_response: { met: number; missed: number; rate: number | null };
+  resolution: { met: number; missed: number; rate: number | null };
+  timeline: { day: string; created: number; resolved: number }[];
+  by_system: { label: string; count: number }[];
+  by_category: { label: string; count: number }[];
+  by_channel: { label: string; count: number }[];
+  by_priority: { label: string; count: number }[];
 }
 
 export interface TicketPage {

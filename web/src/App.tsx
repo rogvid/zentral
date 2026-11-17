@@ -5,12 +5,13 @@ import { Wordmark } from "./brand";
 import { ConfirmProvider } from "./components/Confirm";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppContext, type AppState } from "./context";
-import { InboxIcon, LockIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, ShieldIcon, SunIcon } from "./icons";
+import { ChartIcon, InboxIcon, LockIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, ShieldIcon, SunIcon } from "./icons";
 import { parseRoute, type Route } from "./lib";
 import { useTheme } from "./theme";
 import { AdminPage } from "./pages/admin";
 import { AuditPage } from "./pages/Audit";
 import { InboxPage } from "./pages/Inbox";
+import { InsightsPage } from "./pages/Insights";
 import { PrivacyPage } from "./pages/Privacy";
 import { TicketPage } from "./pages/Ticket";
 import type { AppConfig, Me } from "./types";
@@ -39,6 +40,7 @@ function useRoute(): Route {
 
 const NAV: { page: Route["page"]; href: string; label: string; icon: ReactNode; needs: string[] }[] = [
   { page: "inbox", href: "#/", label: "Inbox", icon: <InboxIcon />, needs: ["ticket:read"] },
+  { page: "insights", href: "#/insights", label: "Insights", icon: <ChartIcon />, needs: ["ticket:read"] },
   { page: "audit", href: "#/audit", label: "Audit trail", icon: <ShieldIcon />, needs: ["audit:read"] },
   { page: "privacy", href: "#/privacy", label: "Privacy requests", icon: <LockIcon />, needs: ["privacy:export"] },
   {
@@ -154,6 +156,8 @@ export function App() {
             <InboxPage />
           ) : route.page === "ticket" ? (
             <TicketPage key={route.id} id={route.id} />
+          ) : route.page === "insights" ? (
+            <InsightsPage />
           ) : route.page === "audit" ? (
             <AuditPage />
           ) : route.page === "privacy" ? (

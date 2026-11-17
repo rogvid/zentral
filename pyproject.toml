@@ -79,7 +79,7 @@ ignore = ["S101"]
 "tests/**" = ["S105", "S106", "S311", "S608", "E501", "PT018", "PT011", "SLF001", "RUF001", "RUF003"]
 "src/zentral/api/**" = ["B008"]
 "src/zentral/cli.py" = ["B008"]
-"scripts/**" = ["E501"]
+"scripts/**" = ["E501", "S311"]  # demo data, not cryptography
 # Long, human-readable field descriptions shown in the admin UI.
 "src/zentral/connectors/email_graph.py" = ["E501"]
 "src/zentral/api/routes/devidp.py" = ["E501"]  # embedded stylesheet

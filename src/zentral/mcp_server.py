@@ -36,7 +36,7 @@ from zentral.runtime import Runtime
 from zentral.schemas import MessageCreate, TicketCreate, TicketUpdate
 from zentral.security.principal import Principal
 from zentral.security.tokens import AuthenticationError, Authenticator
-from zentral.services import admin, tickets
+from zentral.services import admin, insights, tickets
 from zentral.services.context import Ctx, record_denied, resolve_team_ids, touch_user
 from zentral.services.errors import DomainError, NotFound, PermissionDenied
 from zentral.services.tickets import TicketFilter
@@ -277,6 +277,14 @@ def build_mcp(runtime: Runtime, validator: Authenticator, limiter: RateLimiter) 
                 {"id": str(s.id), "key": s.key, "name": s.name, "description": s.description}
                 for s in await admin.list_systems(ctx)
             ]
+
+    @mcp.tool()
+    async def get_insights(
+        days: Annotated[int, Field(ge=7, le=365, description="Look-back period in days.")] = 30,
+    ) -> dict[str, Any]:
+        """Volumes, sources and target attainment for the tickets you can see. Aggregates only."""
+        async with tool_ctx() as ctx:
+            return (await insights.insights(ctx, days)).model_dump(mode="json")
 
     @mcp.tool()
     async def list_categories() -> list[str]:

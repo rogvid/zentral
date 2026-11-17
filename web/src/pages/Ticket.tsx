@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApp, useLoad } from "../context";
-import { channelName, percent, relativeTime, titleCase } from "../lib";
-import type { Activity, Message, Priority, Status, SystemInfo, Team, Ticket, User } from "../types";
+import { channelName, percent, relativeTime, titleCase, until } from "../lib";
+import type { Activity, Message, Priority, Status, SystemInfo, TargetState, Team, Ticket, User } from "../types";
 import { firstName } from "../brand";
 import { ChannelIcon, SparkIcon } from "../icons";
 import { Avatar, Chip, ErrorState, Field, PriorityMark, Spinner, StatusBadge } from "../ui";
@@ -21,6 +21,8 @@ const ACTIVITY_TEXT: Record<string, string> = {
   "automation.rule_applied": "An automation rule was applied",
   "ticket.note_added": "added an internal note",
   "ticket.replied": "replied to the requester",
+  "ticket.acknowledged": "Receipt acknowledged to the requester",
+  "ticket.auto_closed": "Closed automatically after the grace period",
   "message.delivered": "Reply delivered",
   "message.delivery_failed": "Reply could not be delivered",
 };
@@ -62,6 +64,47 @@ function ActivityList({ ticketId, version }: { ticketId: number; version: string
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+const TARGET_TEXT: Record<TargetState, string> = {
+  met: "Met",
+  late: "Met late",
+  due: "Due",
+  breached: "Overdue",
+  paused: "Paused — waiting on requester",
+  none: "",
+};
+
+/** The two promises on every ticket, and where they stand. */
+function Targets({ ticket: t }: { ticket: Ticket }) {
+  const rows = [
+    { label: "First reply", state: t.response_state, due: t.response_due_at, done: t.first_response_at },
+    { label: "Resolution", state: t.resolve_state, due: t.resolve_due_at, done: t.resolved_at },
+  ].filter((row) => row.state !== "none");
+  if (rows.length === 0) return null;
+  return (
+    <div className="card panel">
+      <h2>Targets</h2>
+      <dl className="targets">
+        {rows.map((row) => (
+          <div key={row.label} className={`target target-${row.state}`}>
+            <dt>{row.label}</dt>
+            <dd>
+              <strong>{TARGET_TEXT[row.state]}</strong>
+              {row.due && (row.state === "due" || row.state === "breached" || row.state === "paused") && (
+                <span>
+                  {row.state === "paused" ? "would be due " : "due "}
+                  {until(row.due).text} · {new Date(row.due).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              {row.done && (row.state === "met" || row.state === "late") && <span>{relativeTime(row.done)}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="muted small">Set by priority. The resolution clock pauses while waiting on the requester.</p>
     </div>
   );
 }
@@ -342,6 +385,8 @@ export function TicketPage({ id }: { id: number }) {
           </Field>
           <Tags ticket={t} editable={editable} onChange={(tags) => void update({ tags })} />
         </div>
+
+        <Targets ticket={t} />
 
         <div className="card panel">
           <h2>Requester</h2>

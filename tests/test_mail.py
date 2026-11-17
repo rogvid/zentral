@@ -108,7 +108,13 @@ async def channel(client, auth, **config) -> dict:
         client,
         auth,
         "email_graph",
-        config={"mailbox": MAILBOX, "initial_sync": "all", **config},
+        # Acknowledgements have their own tests; elsewhere they would only add noise.
+        config={
+            "mailbox": MAILBOX,
+            "initial_sync": "all",
+            "acknowledge_new_tickets": False,
+            **config,
+        },
         secrets=SECRETS,
     )
 
@@ -411,13 +417,31 @@ async def test_read_only_channel_and_recipient_allow_list(client, auth, worker, 
     job = await db.scalar(
         select(Job).where(Job.kind == "send_message", Job.last_error.is_not(None))
     )
-    assert job.last_error == "ConnectorError: recipient domain is not on this channel's allow-list"
+    assert (
+        job.last_error == "ConnectorRejected: recipient domain is not on this channel's allow-list"
+    )
+    # A rejection cannot succeed on retry: failed at once, not retried five times.
+    assert (job.status, job.attempts) == ("failed", 1)
+    messages = (await client.get("/api/v1/tickets/2/messages", headers=h)).json()
+    assert messages[-1]["delivery_status"] == "failed"
 
-    await client.patch(
+    # Read-only and acknowledgements contradict each other: refused, not silently ignored.
+    contradictory = await client.patch(
         f"/api/v1/sources/{source['id']}",
         headers=h,
-        json={"config": {"mailbox": MAILBOX, "send_replies": False}},
+        json={
+            "config": {"mailbox": MAILBOX, "send_replies": False, "acknowledge_new_tickets": True}
+        },
     )
+    assert contradictory.status_code == 422
+    r = await client.patch(
+        f"/api/v1/sources/{source['id']}",
+        headers=h,
+        json={
+            "config": {"mailbox": MAILBOX, "send_replies": False, "acknowledge_new_tickets": False}
+        },
+    )
+    assert r.status_code == 200
     await client.post(
         "/api/v1/tickets/1/messages", headers=h, json={"kind": "outbound", "body": "Again"}
     )
@@ -550,3 +574,59 @@ async def test_finished_jobs_are_cleaned_up(client, auth, worker, db, graph):
     await worker.schedule()
     remaining = (await db.scalars(select(Job).where(Job.kind == "classify_ticket"))).all()
     assert sorted(j.status for j in remaining) == ["done", "failed"]
+
+
+# --- acknowledging the requester ------------------------------------------------------------
+
+
+async def test_new_requests_are_acknowledged_with_their_reference(client, auth, worker, graph, db):
+    graph.inbox = [mail(1)]
+    await channel(client, auth, acknowledge_new_tickets=True)
+    await poll(worker)
+    await worker.run_once()  # deliver
+
+    (ack,) = graph.sent
+    assert ack["message"]["subject"] == "[ZEN-1] Problem 1"  # replies thread back by the key
+    assert "logged as ZEN-1" in ack["message"]["body"]["content"]
+    assert ack["message"]["toRecipients"] == [{"emailAddress": {"address": "Jane.Doe@example.com"}}]
+
+    # Visible in the conversation, authored by Zentral, delivered.
+    messages = (await client.get("/api/v1/tickets/1/messages", headers=auth("admin"))).json()
+    assert [(m["kind"], m["author_type"], m["delivery_status"]) for m in messages] == [
+        ("inbound", "requester", "not_applicable"),
+        ("outbound", "system", "sent"),
+    ]
+    # An automatic message is not the desk responding.
+    ticket = (await client.get("/api/v1/tickets/1", headers=auth("admin"))).json()
+    assert ticket["first_response_at"] is None and ticket["status"] == "new"
+    assert (await audit_events(client, auth, action="ticket.acknowledged"))[0]["resource_id"] == "1"
+
+
+async def test_acknowledgement_only_once_per_ticket_and_custom_text(client, auth, worker, graph):
+    reply = mail(2, subject="RE: [ZEN-1] Problem 1")
+    graph.inbox = [mail(1), reply]
+    await channel(
+        client,
+        auth,
+        acknowledge_new_tickets=True,
+        acknowledgement_text="Got it: {ticket_key}. {ticket_key}! {other} {0}",
+    )
+    await poll(worker)
+    await worker.run_once()
+    (ack,) = graph.sent  # the follow-up on the same ticket is not acknowledged again
+    # Only {ticket_key} is substituted; nothing else in the template is interpreted.
+    assert ack["message"]["body"]["content"] == "Got it: ZEN-1. ZEN-1! {other} {0}"
+
+
+async def test_no_acknowledgement_without_an_address_or_for_skipped_mail(
+    client, auth, worker, graph
+):
+    no_address = mail(1)
+    no_address["from"] = {"emailAddress": {"name": "Ghost"}}
+    auto = mail(2, internetMessageHeaders=[{"name": "Auto-Submitted", "value": "auto-replied"}])
+    graph.inbox = [no_address, auto]
+    await channel(client, auth, acknowledge_new_tickets=True)
+    await poll(worker)
+    await worker.run_once()
+    assert len(await tickets(client, auth)) == 1
+    assert graph.sent == []  # nobody to tell, and auto-replies never get an answer (no loops)

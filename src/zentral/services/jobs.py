@@ -22,6 +22,7 @@ from zentral.ai.service import classify_ticket
 from zentral.connectors.base import (
     Capability,
     ConnectorError,
+    ConnectorRejected,
     OutboundMessage,
 )
 from zentral.db.models import (
@@ -37,7 +38,7 @@ from zentral.runtime import Runtime
 from zentral.services import privacy
 from zentral.services.context import Ctx
 from zentral.services.ingest import ingest
-from zentral.services.tickets import ticket_key
+from zentral.services.tickets import auto_close, ticket_key
 
 log = structlog.get_logger(__name__)
 
@@ -92,6 +93,7 @@ class Worker:
     async def _run(self, job: Job) -> None:
         handler = self._handlers.get(job.kind)
         error: str | None = None
+        permanent = False  # retrying cannot help
         try:
             if handler is None:
                 raise ConnectorError(f"unknown job kind {job.kind}")
@@ -100,6 +102,7 @@ class Worker:
                 await handler(ctx, job.payload)
                 await ctx.commit()
         except Exception as exc:
+            permanent = isinstance(exc, ConnectorRejected)
             # Only our own ConnectorError messages are known to be free of content.
             detail = str(exc) if isinstance(exc, ConnectorError) else ""
             error = f"{type(exc).__name__}: {detail}"[:500]
@@ -121,7 +124,7 @@ class Worker:
                 stored.status = JobStatus.FAILED
                 stored.last_error = error
                 await self._record_source_error(ctx, stored, error)
-            elif stored.attempts >= MAX_ATTEMPTS:
+            elif stored.attempts >= MAX_ATTEMPTS or permanent:
                 stored.status = JobStatus.FAILED
                 stored.last_error = error
                 await self._on_exhausted(ctx, stored)
@@ -223,6 +226,9 @@ class Worker:
         await classify_ticket(ctx, self.rt.ai, int(str(payload["ticket_id"])))
 
     async def _retention(self, ctx: Ctx, payload: dict[str, object]) -> None:
+        """Lifecycle housekeeping: close resolved tickets, then apply retention."""
+        while await auto_close(ctx):
+            await ctx.commit()
         while await privacy.retention_sweep(ctx):
             await ctx.commit()
 

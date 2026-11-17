@@ -28,6 +28,7 @@ uv run zentral db upgrade >/dev/null
 uv run zentral serve --port "$port" >"$work/serve.log" 2>&1 & pids+=($!)
 for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null 2>&1 && break; sleep 0.2; done
 uv run python scripts/seed_demo.py "http://127.0.0.1:$port" >/dev/null
+uv run python scripts/seed_history.py >/dev/null
 uv run zentral worker >"$work/worker.log" 2>&1 & pids+=($!)
 sleep 4   # let the worker classify the seeded tickets
 

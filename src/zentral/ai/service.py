@@ -22,6 +22,7 @@ from zentral.db.models import Message, System, Ticket, TicketPriority
 from zentral.security.redaction import redact
 from zentral.services.automation import apply_rules
 from zentral.services.context import Ctx
+from zentral.services.sla import refresh_targets
 from zentral.services.tickets import apply_system
 from zentral.text import single_line
 
@@ -131,3 +132,5 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
         fallback=used is not provider,
     )
     await apply_rules(ctx, ticket)
+    # Classification or a rule may have changed the priority: re-plan the targets.
+    refresh_targets(ticket, ctx.settings)

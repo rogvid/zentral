@@ -25,13 +25,13 @@ MAX_ROWS = 50_000
 # Insights counts; it never needs content. Loading it would decrypt the
 # subject, summary and requester of every ticket in the period — measured as
 # the largest CPU cost under load. ``raiseload`` makes any later use fail loudly.
+# Team and system stay loaded: they hold no encrypted data, and service-level
+# views read the system's own targets.
 METADATA_ONLY = (
     defer(Ticket.subject, raiseload=True),
     defer(Ticket.ai_summary, raiseload=True),
     defer(Ticket.thread_ref, raiseload=True),
     raiseload(Ticket.requester),
-    raiseload(Ticket.team),
-    raiseload(Ticket.system),
 )
 
 

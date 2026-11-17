@@ -6,7 +6,7 @@
 # Pin the base images by digest in your own registry for reproducible builds.
 
 # --- 1. web client -----------------------------------------------------------
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund

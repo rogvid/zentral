@@ -35,14 +35,25 @@ def serve(
         False, help="Trust X-Forwarded-* from the addresses in --forwarded-allow-ips."
     ),
     forwarded_allow_ips: str = "127.0.0.1",
+    workers: int = typer.Option(
+        1,
+        min=1,
+        help="Server processes. Use about one per CPU core on a single host "
+        "(docs/operations/sizing.md); on Kubernetes scale replicas instead.",
+    ),
 ) -> None:
     """Run the API, MCP endpoint and web client."""
     import uvicorn
 
     from zentral.security.keys import materialise
 
-    # Fail before binding the port; the server process unwraps again for itself.
-    materialise(get_settings()).validate_for_runtime()
+    # Fail before binding the port; each server process unwraps again for itself.
+    settings = materialise(get_settings())
+    settings.validate_for_runtime()
+    if workers > 1 and settings.auth_mode == "dev":
+        # The development identity provider signs with a per-process key.
+        typer.echo("--workers > 1 needs real sign-in (entra or oidc), not dev", err=True)
+        raise typer.Exit(2)
     uvicorn.run(
         "zentral.api.app:create_app",
         factory=True,
@@ -53,6 +64,7 @@ def serve(
         server_header=False,
         access_log=False,  # Zentral writes its own access log without query strings
         log_config=None,
+        workers=workers,
     )
 
 
@@ -436,6 +448,40 @@ def keys_rotate_audit_key(output: OutputOption = None) -> None:
     assert isinstance(material, KeyMaterial)
     _seal_and_write(material.with_new_audit_key(), _keyring_target(output))
     typer.echo("next: restart API and worker, then `zentral audit verify`")
+
+
+@keys_app.command("verify-escrow")
+def keys_verify_escrow(
+    keyring: Annotated[Path, typer.Option(help="The escrow keyring.")],
+    kek_file: Annotated[Path, typer.Option(help="The escrow key file (local_file provider).")],
+) -> None:
+    """Prove an offline escrow keyring opens to the keys in use. Exit code 1 if not.
+
+    Part of the restore drill: the escrow copy is only useful if it is current.
+    """
+    import json
+
+    from zentral.security import keys
+
+    settings = get_settings()
+    try:
+        current = keys.KeyMaterial.from_settings(keys.materialise(settings))
+        document = json.loads(keyring.read_text(encoding="utf-8"))
+        escrow_settings = settings.model_copy(update={"local_kek_file": str(kek_file)})
+        with keys.provider_http() as http:
+            provider = keys.load_provider(escrow_settings, http, name="local_file", for_escrow=True)
+            escrow = keys.open_keyring(document, provider)
+    except (keys.KeyCustodyError, OSError, ValueError) as exc:
+        typer.echo(f"✗ escrow: {exc}", err=True)
+        raise typer.Exit(1) from None
+    if escrow != current:
+        typer.echo(
+            f"✗ escrow keyring (sealed {document.get('created')}) holds different keys: "
+            "refresh it with `zentral keys rewrap --to-provider local_file`",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.echo(f"✓ escrow keyring (sealed {document.get('created')}) matches the keys in use")
 
 
 @keys_app.command("show")

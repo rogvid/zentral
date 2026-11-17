@@ -470,7 +470,7 @@ def _run(*args: str):
     return result
 
 
-def test_migrate_to_a_keyring_and_rotate_everything(keyring_env, tmp_path):
+def test_migrate_to_a_keyring_and_rotate_everything(keyring_env, tmp_path, kek_file):
     from zentral.db.models import Ticket
     from zentral.runtime import build_runtime
 
@@ -540,7 +540,24 @@ def test_migrate_to_a_keyring_and_rotate_everything(keyring_env, tmp_path):
     with httpx.Client() as http:
         provider = keys.load_provider(get_settings(), http)
         assert keys.open_keyring(after, provider) == keys.open_keyring(before, provider)
-    assert _run("keys", "new-local-kek", str(tmp_path / "escrow-kek")).exit_code == 0
+    # 6. The escrow copy is verified against the keys in use, and goes stale on change.
+    escrow_kek = tmp_path / "escrow-kek"
+    assert _run("keys", "new-local-kek", str(escrow_kek)).exit_code == 0
+    with httpx.Client() as http:
+        escrow_doc = keys.seal(
+            KeyMaterial.from_settings(keys.materialise(get_settings())),
+            keys.load_provider(local_settings(escrow_kek), http),
+        )
+    escrow = tmp_path / "escrow.json"
+    keys.write_keyring(escrow, escrow_doc)
+    args = ("keys", "verify-escrow", "--keyring", str(escrow), "--kek-file", str(escrow_kek))
+    ok = _run(*args)
+    assert ok.exit_code == 0 and "matches the keys in use" in ok.output
+    assert _run("keys", "rotate-audit-key").exit_code == 0
+    stale = _run(*args)
+    assert stale.exit_code == 1 and "holds different keys" in stale.output
+    wrong = _run("keys", "verify-escrow", "--keyring", str(escrow), "--kek-file", str(kek_file))
+    assert wrong.exit_code == 1
 
 
 def test_init_refuses_to_overwrite_a_keyring(keyring_env, tmp_path):

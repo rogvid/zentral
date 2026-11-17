@@ -68,3 +68,31 @@ describe("visual helpers", () => {
     expect(nextTheme("dark")).toBe("system");
   });
 });
+
+import { cleanValues, initialValues, parseList } from "./components/SchemaForm";
+
+describe("schema-driven forms", () => {
+  const schema = {
+    required: ["mailbox"],
+    properties: {
+      mailbox: { type: "string" },
+      folder: { type: "string", default: "inbox" },
+      page_size: { type: "integer", default: 25 },
+      send_replies: { type: "boolean", default: true },
+      allowed: { type: "array", items: { type: "string" }, default: [] },
+      probe: { anyOf: [{ type: "string" }, { type: "null" }], default: null },
+    },
+  };
+  it("starts from stored values over schema defaults", () => {
+    expect(initialValues(schema, { folder: "support", send_replies: false })).toEqual({
+      mailbox: "", folder: "support", page_size: 25, send_replies: false, allowed: [], probe: "",
+    });
+  });
+  it("omits empty optional values and keeps types", () => {
+    const values = { mailbox: "a@b.c", folder: "", page_size: "40", send_replies: false, allowed: ["x.com"], probe: "" };
+    expect(cleanValues(schema, values)).toEqual({ mailbox: "a@b.c", page_size: 40, send_replies: false, allowed: ["x.com"] });
+  });
+  it("parses comma and newline separated lists", () => {
+    expect(parseList(" a.com, b.org\n\n c.net ,")).toEqual(["a.com", "b.org", "c.net"]);
+  });
+});

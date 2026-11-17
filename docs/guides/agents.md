@@ -43,6 +43,15 @@ applied.
   to a closed ticket starts a new one.
 - **Route**: change *Team* to hand the ticket to another queue. You keep access
   while it is assigned to you.
+- **Tags**: add short labels under *Details*. Tags are not encrypted, so never
+  use names or addresses.
+- **Activity** shows what happened to the ticket and who did it — changes,
+  notes, replies, AI triage. It does not show who merely looked.
+
+Handy to know: ++ctrl+enter++ sends. Text you have not sent yet is kept while
+you look at another ticket (in memory only — it is gone when you close the
+tab). When the queue changes while you are in the inbox, a banner offers the
+latest view.
 
 ## The AI triage card
 

@@ -221,3 +221,32 @@ def test_text_cleaning():
     assert clean_text("a\x00b‮c​") == "abc"
     assert clean_text("x" * 50, max_chars=10).startswith("x" * 10 + "\n[")
     assert single_line("  a\n\n b\t c ", 4) == "a b…"
+
+
+async def test_repeated_bad_tokens_are_throttled_per_address(client, auth, runtime):
+    runtime.settings.auth_failure_limit_per_minute = 3
+    bad = {"Authorization": "Bearer not-a-token"}
+    codes = [(await client.get("/api/v1/me", headers=bad)).status_code for _ in range(5)]
+    assert codes == [401, 401, 401, 429, 429]
+    # The block is on the address: even a valid token waits it out…
+    assert (await client.get("/api/v1/me", headers=auth("agent"))).status_code == 429
+    # …and successful requests never count towards it.
+    runtime.settings.auth_failure_limit_per_minute = 1000
+    for _ in range(5):
+        assert (await client.get("/api/v1/me", headers=auth("agent"))).status_code == 200
+
+
+def test_redaction_is_linear_on_hostile_input():
+    """No catastrophic backtracking: 200 kB of pattern-bait must finish quickly."""
+    import time
+
+    bait = (
+        ("1 " * 50_000)
+        + ("a@" * 20_000)
+        + ("DE00 " * 10_000)
+        + ("+1-" * 20_000)
+        + "password: " * 5_000
+    )
+    started = time.perf_counter()
+    redact(bait)
+    assert time.perf_counter() - started < 2.0

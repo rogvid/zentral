@@ -36,9 +36,13 @@ team, a webhook for your monitoring. Step-by-step guides:
 - [Microsoft Teams](connectors/teams.md)
 - [Webhook (services)](connectors/webhook.md)
 
+Each channel type has its own settings form. After saving, press **Test** to
+run a live check; the card then shows **Healthy** with the time of the last
+successful run, or **Failing** with the reason. **Edit** changes settings later.
+
 For each channel you can set a **default team** and a **default system**.
 Secrets you enter are encrypted and can never be displayed again — only
-replaced. Webhook tokens are shown once; use *Rotate token* if one is lost or
+replaced (leave a field empty when editing to keep the stored value). Webhook tokens are shown once; use *Rotate token* if one is lost or
 leaked. Disabling a channel stops intake immediately without deleting anything.
 
 ## Automation rules
@@ -56,6 +60,9 @@ Examples:
 - *When system is Payment platform → route to Payments team.*
 - *When subject contains "refund" → set system Payment platform.* (Combine with
   the rule above by giving it a lower order number.)
+
+Rules can be switched off and on without deleting them. Deleting anything in
+*Administration* asks for confirmation first.
 
 All conditions on a rule must match. An empty condition set matches every
 ticket. Rules can only route and label.

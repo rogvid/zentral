@@ -1,7 +1,7 @@
 // Shared presentational components. No inline styles (strict CSP) and no raw
 // HTML: everything is rendered through React text nodes.
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
 import { AlertIcon, InboxIcon } from "./icons";
 import { hue, initials, titleCase } from "./lib";
 import type { Priority, Status } from "./types";
@@ -114,13 +114,32 @@ export function Stat({
   );
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+/**
+ * A labelled form control. The hint is attached with `aria-describedby`, so a
+ * screen reader announces "Mailbox, edit text" and then the explanation —
+ * rather than reading the whole hint as the field's name.
+ */
+export function Field({ label, children, hint }: { label: string; children: ReactElement; hint?: string }) {
+  const id = useId();
+  const hintId = `${id}-hint`;
+  const control = isValidElement<Record<string, unknown>>(children)
+    ? cloneElement(children, {
+        id: (children.props.id as string | undefined) ?? id,
+        "aria-describedby": hint ? hintId : undefined,
+      })
+    : children;
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      {children}
-      {hint && <span className="field-hint">{hint}</span>}
-    </label>
+    <div className="field">
+      <label className="field-label" htmlFor={id}>
+        {label}
+      </label>
+      {control}
+      {hint && (
+        <span className="field-hint" id={hintId}>
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
 

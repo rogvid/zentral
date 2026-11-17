@@ -117,6 +117,25 @@ authentication** in front of it. Before you ship:
 - [ ] Declare secrets in `secret_fields` so they are stored encrypted and never
       returned by the API.
 
+## Verify your own blast radius
+
+If the platform's permission model is broader than your channel needs, do what
+the mail connector does: **check, before reading anything, that the credentials
+cannot reach beyond the channel**, and raise `ConnectorError` if they can. Fail
+closed, cache the positive result briefly, and re-check periodically.
+
+## Self-test and health
+
+Implement `diagnose()` to return a list of `Diagnostic(name, status, detail)`.
+It runs when an administrator presses **Test** on the channel. Keep `detail`
+free of secrets and content. Polling failures are shown on the channel
+automatically from your `ConnectorError` message, so write messages an
+administrator can act on.
+
+To do something to a message *after* it is safely stored (mark as read,
+acknowledge), return opaque references in `PollResult.ack` and implement
+`acknowledge(refs)`.
+
 ## Polling connectors
 
 Return new messages and an opaque cursor; Zentral stores the cursor and hands

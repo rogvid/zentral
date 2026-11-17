@@ -80,6 +80,8 @@ audit live in `services/`.
 
 ## Common tasks
 
+`make help` lists shortcuts; `make check` runs what CI runs.
+
 | Task | Command |
 |---|---|
 | Format, lint | `uv run ruff format . && uv run ruff check .` |
@@ -92,6 +94,7 @@ audit live in `services/`.
 | Regenerate reference tables | `uv run python scripts/gen_docs.py` |
 | Docs preview | `uv run mkdocs serve` |
 | Web tests, build | `npm test`, `npm run build` (in `web/`) |
+| Browser end-to-end test | `scripts/e2e.sh` |
 
 ## Database migrations
 

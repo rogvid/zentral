@@ -92,6 +92,17 @@ class MessageOut(Out):
     created_at: datetime
 
 
+class ActivityOut(Out):
+    """One entry of a ticket's history. Derived from the audit trail; no content."""
+
+    occurred_at: datetime
+    action: str
+    actor_name: str
+    actor_kind: str
+    channel: str
+    details: dict[str, Any]
+
+
 class TicketCreate(In):
     subject: Short
     body: Body

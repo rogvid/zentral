@@ -141,5 +141,6 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_MAX_MESSAGE_CHARS` | `100000` | int |
 | `ZENTRAL_RATE_LIMIT_PER_MINUTE` | `300` | int |
 | `ZENTRAL_HOOK_RATE_LIMIT_PER_MINUTE` | `120` | int |
+| `ZENTRAL_AUTH_FAILURE_LIMIT_PER_MINUTE` | `30` | int |
 | `ZENTRAL_LOG_LEVEL` | `INFO` | str |
 <!-- END GENERATED -->

@@ -16,8 +16,14 @@ from __future__ import annotations
 
 import re
 
+# Every pattern below must run in linear time on hostile input; see
+# tests/test_hardening.py::test_redaction_is_linear_on_hostile_input.
+
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("EMAIL", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    # Quantifiers are bounded on purpose: an unbounded local part makes this
+    # quadratic on long runs of address characters without an "@" (a cheap way
+    # to burn CPU, since redaction runs on attacker-supplied text).
+    ("EMAIL", re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}\b")),
     ("URL", re.compile(r"\bhttps?://[^\s<>\"']+", re.IGNORECASE)),
     ("IBAN", re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b")),
     ("CARD", re.compile(r"\b(?:\d[ -]?){13,19}\b")),

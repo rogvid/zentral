@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Api } from "./api";
 import { loadConfig, startSession, type Session } from "./auth";
+import { ConfirmProvider } from "./components/Confirm";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppContext, type AppState } from "./context";
 import { InboxIcon, LockIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, ShieldIcon, SunIcon } from "./icons";
 import { parseRoute, type Route } from "./lib";
 import { useTheme } from "./theme";
-import { AdminPage } from "./pages/Admin";
+import { AdminPage } from "./pages/admin";
 import { AuditPage } from "./pages/Audit";
 import { InboxPage } from "./pages/Inbox";
 import { PrivacyPage } from "./pages/Privacy";
@@ -88,10 +90,22 @@ export function App() {
 
   const nav = NAV.filter((item) => item.needs.some((p) => state.can(p)));
   const allowed = nav.some((item) => item.page === route.page) || (route.page === "ticket" && state.can("ticket:read"));
+  // Land people on the first page their role can use (an auditor has no inbox).
+  const home = nav[0];
+  if (!allowed && route.page === "inbox" && home) {
+    window.location.replace(home.href);
+    return null;
+  }
   const active = route.page === "ticket" ? "inbox" : route.page;
+  const pageTitle = route.page === "ticket" ? `${state.config.ticket_prefix}-${route.id}` : nav.find((n) => n.page === route.page)?.label;
+  document.title = pageTitle ? `${pageTitle} · Zentral` : "Zentral";
 
   return (
     <AppContext.Provider value={state}>
+      <ConfirmProvider>
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
       <div className="shell">
         <aside className="sidebar">
           <a className="brand" href="#/">
@@ -131,7 +145,8 @@ export function App() {
             </div>
           </div>
         </aside>
-        <main className="main">
+        <main className="main" id="main" tabIndex={-1}>
+          <ErrorBoundary resetKey={window.location.hash}>
           {!allowed ? (
             <ErrorState message="Your role does not include access to this page." />
           ) : route.page === "inbox" ? (
@@ -145,6 +160,7 @@ export function App() {
           ) : (
             <AdminPage />
           )}
+          </ErrorBoundary>
         </main>
         <div className="toasts" aria-live="polite">
           {toasts.map((toast) => (
@@ -154,6 +170,7 @@ export function App() {
           ))}
         </div>
       </div>
+      </ConfirmProvider>
     </AppContext.Provider>
   );
 }

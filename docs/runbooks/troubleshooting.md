@@ -46,13 +46,11 @@ Reasons in `authentication_failed`:
 
 ## No new tickets from e-mail
 
-1. Is the worker running? Any `job_failed` with `kind: poll_source`?
+1. *Administration → Channels*: the card shows **Failing** with the reason, or
+   press **Test** for a live check of sign-in, scope and mailbox access. (The
+   same text is in `ingest_sources.last_error` and the worker log.)
 
-    ```sql
-    SELECT status, attempts, last_error, run_after FROM jobs WHERE kind = 'poll_source' ORDER BY created_at DESC LIMIT 5;
-    ```
-
-2. Read `last_error`:
+2. Read the reason:
 
     | Error | Cause |
     |---|---|
@@ -60,9 +58,15 @@ Reasons in `authentication_failed`:
     | `Graph returned 403` | Permissions / mailbox scope not granted (or not yet propagated — can take up to an hour) |
     | `Graph returned 404` | Mailbox address or folder name wrong |
     | `token request failed: ConnectError` | No outbound route to `login.microsoftonline.com` |
+    | `the app holds tenant-wide permissions (…)` | The app registration still has Graph `Mail.*` permissions. Scope it with RBAC for Applications and remove them, or configure a scope probe mailbox ([guide](../guides/connectors/email.md#3-grant-access-to-exactly-one-mailbox)) |
+    | `credentials can read the probe mailbox` | The access policy does not apply: the app can read other mailboxes. Fix the policy — Zentral will not run until it is denied |
+    | `scope probe was inconclusive (Graph returned 404)` | The probe address does not exist; use a real mailbox |
+    | `could not read the granted permissions` | Configure a scope probe mailbox |
 
-3. Channel enabled? Mail in the right folder (default *Inbox*)? Mail older
-   than the cursor is skipped — `SELECT cursor FROM ingest_sources`.
+3. Channel enabled? Mail in the right folder (default *Inbox*)?
+4. Mail arrives but no ticket: it was filtered — an automatic reply, a blocked
+   sender, a domain outside *Allowed sender domains*, or it was already in the
+   mailbox when the channel was created (*First synchronisation: new only*).
 
 ## Webhook returns 401
 

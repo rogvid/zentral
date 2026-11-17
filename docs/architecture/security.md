@@ -19,7 +19,9 @@ long-lived credentials to people, and keeps no server-side sessions.
 - Signing keys are cached and refreshed on rollover, at most once a minute —
   forged tokens with random key IDs cannot be used to make Zentral hammer the
   identity provider. If keys cannot be fetched, requests are **rejected**.
-- Authentication failures return one generic `401` with no detail.
+- Authentication failures return one generic `401` with no detail, and an
+  address that keeps presenting bad tokens is throttled before any further
+  cryptographic work is done for it.
 - The browser signs in with the authorization-code flow and PKCE. There are no
   cookies, hence no CSRF surface.
 
@@ -90,11 +92,21 @@ Everything that arrives through a channel is hostile until proven otherwise.
   HTTPS only, redirects disabled: a connector cannot be pointed at internal
   addresses.
 
+## Scoped integrations
+
+Credentials Zentral holds for other systems are limited to what the channel
+needs, and where the platform allows it Zentral **verifies** the limit instead
+of assuming it. The Microsoft 365 mail connector proves, before reading any
+mail and again every hour, that its credentials cannot reach other mailboxes;
+if it cannot prove it, it does not run
+([details](../guides/connectors/email.md#how-the-scope-check-works)).
+
 ## Abuse resistance
 
 Body-size limit (1 MiB by default) enforced before parsing; bounded string
 lengths and `extra="forbid"` on every input model; pagination caps; per-principal
-and per-channel rate limits; host-header allow-list; DNS-rebinding protection
+and per-channel rate limits; a per-address limit on failed sign-ins; pattern
+matching on untrusted text is bounded to linear time; host-header allow-list; DNS-rebinding protection
 on the MCP endpoint. Validation errors never echo submitted values.
 
 ## Runtime hardening

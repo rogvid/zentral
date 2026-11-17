@@ -195,3 +195,28 @@ async def test_stats_respect_scope(client, auth):
     empty = (await client.get("/api/v1/tickets/stats", headers=auth("viewer"))).json()
     assert set(empty.values()) == {0}
     assert (await client.get("/api/v1/tickets/stats", headers=auth("auditor"))).status_code == 403
+
+
+async def test_activity_shows_changes_but_not_who_looked(client, auth, worker):
+    team = await make_team(client, auth, "Support", ["agent"])
+    ticket = await make_ticket(
+        client, auth, "agent", team_id=team, requester_email="jane@example.com"
+    )
+    url = f"/api/v1/tickets/{ticket['id']}"
+    await worker.run_once()
+    await client.patch(url, headers=auth("agent"), json={"status": "pending"})
+    await client.post(
+        f"{url}/messages", headers=auth("agent"), json={"kind": "note", "body": "secret note text"}
+    )
+    await client.get(url, headers=auth("admin"))  # a read: must not appear
+
+    r = await client.get(f"{url}/activity", headers=auth("agent"))
+    assert r.status_code == 200
+    actions = [a["action"] for a in r.json()]
+    assert actions == ["ticket.note_added", "ticket.updated", "ticket.classified", "ticket.created"]
+    assert {a["actor_name"] for a in r.json()} == {"Agent", "Zentral"}
+    assert "secret note text" not in r.text and "jane@example.com" not in r.text
+
+    # Same scope rules as the ticket itself.
+    assert (await client.get(f"{url}/activity", headers=auth("agent2"))).status_code == 404
+    assert (await client.get(f"{url}/activity", headers=auth("auditor"))).status_code == 403

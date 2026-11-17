@@ -159,6 +159,8 @@ class Settings(BaseSettings):
     max_message_chars: int = Field(default=100_000, ge=1000)
     rate_limit_per_minute: int = Field(default=300, ge=1)
     hook_rate_limit_per_minute: int = Field(default=120, ge=1)
+    # Failed authentications tolerated per client address before it is throttled.
+    auth_failure_limit_per_minute: int = Field(default=30, ge=1)
 
     log_level: str = "INFO"
 

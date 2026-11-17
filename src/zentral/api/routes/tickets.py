@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, status
 from zentral.api.deps import CtxDep
 from zentral.db.models import TicketPriority, TicketStatus
 from zentral.schemas import (
+    ActivityOut,
     Email,
     MessageCreate,
     MessageOut,
@@ -90,6 +91,11 @@ async def list_messages(ctx: CtxDep, ticket_id: int) -> list[MessageOut]:
     messages = await tickets.list_messages(ctx, ticket_id)
     await ctx.commit()
     return messages
+
+
+@router.get("/{ticket_id}/activity")
+async def ticket_activity(ctx: CtxDep, ticket_id: int) -> list[ActivityOut]:
+    return await tickets.ticket_activity(ctx, ticket_id)
 
 
 @router.post("/{ticket_id}/messages", status_code=status.HTTP_201_CREATED)

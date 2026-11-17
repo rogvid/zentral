@@ -51,10 +51,16 @@ async def get_principal(request: Request) -> Principal:
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthenticated()
+    ip = client_ip(request)
+    # An address that keeps presenting bad tokens is slowed down before any
+    # cryptography is done for it (token guessing, stolen-token replay, scanners).
+    if limiter.blocked(f"authfail:{ip}", runtime.settings.auth_failure_limit_per_minute):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many failed attempts")
     try:
         principal = await validator.validate(token.strip())
     except AuthenticationError as exc:
-        log.warning("authentication_failed", reason=str(exc), ip=client_ip(request))
+        limiter.allow(f"authfail:{ip}", runtime.settings.auth_failure_limit_per_minute)
+        log.warning("authentication_failed", reason=str(exc), ip=ip)
         raise _unauthenticated() from exc
     if not limiter.allow(f"p:{principal.subject}", runtime.settings.rate_limit_per_minute):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limit exceeded")

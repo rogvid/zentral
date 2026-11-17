@@ -34,10 +34,11 @@ import json
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
+from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from zentral.connectors.base import (
     Capability,
@@ -48,7 +49,17 @@ from zentral.connectors.base import (
     OutboundMessage,
     PollResult,
 )
-from zentral.schemas import Email
+
+# Mailbox addresses end up in a Graph URL path, so they are held to a strict
+# character set (no "/", "?", "#", "%" …) and percent-encoded when used.
+Mailbox = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        max_length=320,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._+'-]{0,63}@[A-Za-z0-9]([A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$",
+    ),
+]
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
@@ -91,7 +102,7 @@ def _domains(value: Any) -> Any:
 class GraphMailConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mailbox: Email = Field(
+    mailbox: Mailbox = Field(
         title="Mailbox",
         description="Address of the shared mailbox Zentral reads, e.g. servicedesk@example.com.",
     )
@@ -101,7 +112,7 @@ class GraphMailConfig(BaseModel):
         title="Folder",
         description="Well-known folder name or folder ID to read from.",
     )
-    scope_probe_mailbox: Email | None = Field(
+    scope_probe_mailbox: Mailbox | None = Field(
         default=None,
         title="Scope probe mailbox",
         description=(
@@ -283,7 +294,13 @@ class GraphMailConnector(Connector):
         return resp
 
     def _folder_url(self, mailbox: str) -> str:
-        return f"{GRAPH}/users/{mailbox}/mailFolders/{self.config.folder}/messages"
+        return (
+            f"{self._user_url(mailbox)}/mailFolders/{quote(self.config.folder, safe='')}/messages"
+        )
+
+    @staticmethod
+    def _user_url(mailbox: str) -> str:
+        return f"{GRAPH}/users/{quote(mailbox, safe='@')}"
 
     # -- scope verification ------------------------------------------------------------
 
@@ -307,7 +324,7 @@ class GraphMailConnector(Connector):
                 raise ScopeError("scope probe mailbox must be a different mailbox")
             resp = await self._raw(
                 "GET",
-                f"{GRAPH}/users/{probe}/mailFolders/inbox/messages",
+                f"{self._user_url(probe)}/mailFolders/inbox/messages",
                 params={"$top": "1", "$select": "id"},
             )
             if resp.status_code == 200:
@@ -409,7 +426,7 @@ class GraphMailConnector(Connector):
                 continue
             await self._request(
                 "PATCH",
-                f"{GRAPH}/users/{self.config.mailbox}/messages/{ref}",
+                f"{self._user_url(self.config.mailbox)}/messages/{ref}",
                 json={"isRead": True},
             )
 
@@ -428,7 +445,7 @@ class GraphMailConnector(Connector):
         await self.verify_scope()
         await self._request(
             "POST",
-            f"{GRAPH}/users/{cfg.mailbox}/sendMail",
+            f"{self._user_url(cfg.mailbox)}/sendMail",
             json={
                 "message": {
                     "subject": f"[{message.ticket_key}] {message.subject}",

@@ -86,14 +86,34 @@ Use it to compare models on the task before choosing one.
 
 ## Web client
 
-Unit tests cover pure helpers (routing, formatting, PKCE). UI behaviour is
-checked with a Playwright walkthrough against a running dev instance that signs
-in as each persona and fails on console errors, failed requests or CSP
-violations. Run one after any UI change.
+Unit tests (`npm test`) cover pure helpers: routing, formatting, PKCE, theme,
+schema-driven forms.
+
+Behaviour is covered by a browser end-to-end test:
+
+```bash
+scripts/e2e.sh                 # or: make e2e
+scripts/e2e.sh ./screenshots   # also save screenshots
+```
+
+It builds the client, starts a throw-away development instance with sample
+data, and runs `web/e2e/walkthrough.mjs`: sign-in as each persona through the
+real OpenID Connect flow, then the main journeys — working a ticket, tags,
+drafts, activity, creating a ticket, adding/testing/editing/deleting a mail
+channel, toggling a rule, verifying the audit trail, the masked agent view, a
+privacy export and erasure, and the phone layout in dark mode.
+
+It **fails on any console error (including CSP violations), any uncaught page
+error and any unexpected HTTP error**, so add a step whenever you add a
+journey. Deliberately provoked errors are declared with `expectError(...)`.
+It has already paid for itself: it found an auditor landing on a "no access"
+page, a race that wiped text typed while a message was being sent, and form
+hints that polluted accessible names.
 
 ## What CI runs
 
 Formatting · lint · types · `bandit` · tests on SQLite with coverage · tests on
-PostgreSQL · `pip-audit` · web tests, build, `npm audit` · generated docs are
+PostgreSQL · `pip-audit` · web tests, build, `npm audit` · browser end-to-end
+test · generated docs are
 current · docs build in strict mode · image build and container smoke test ·
 Compose file validation.

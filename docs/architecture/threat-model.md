@@ -42,7 +42,7 @@ beyond their role, any AI model's output.
 | Spoof an e-mail sender | Out of Zentral's control: rely on SPF/DKIM/DMARC enforcement in Exchange. Threading requires sender = requester | A spoofed sender can open tickets and append to their "own" |
 | XSS via ticket content | Text-only storage and rendering; strict CSP | Browser zero-day |
 | Enumerate tickets or channels | Uniform `404`/`401`; server-side scope filter | — |
-| Denial of service | Size limits, rate limits, bounded queries | Volumetric attacks: needs an upstream WAF/CDN |
+| Denial of service | Size limits, rate limits, bounded queries, linear-time text matching, throttling of repeated bad tokens | Volumetric attacks: needs an upstream WAF/CDN |
 
 ### Malicious message senders
 
@@ -62,6 +62,7 @@ beyond their role, any AI model's output.
 | Admin quietly exports personal data | Admin role has no export/erase permission (segregation of duties); privacy operations are audited |
 | Someone edits the audit trail | Hash chain (keyed) + database triggers; verification detects edits, deletions, reordering |
 | Over-privileged service identity | Narrow roles (`Zentral.Ingest`, `Zentral.Automation`); per-channel tokens |
+| Mail connector credentials used to read other mailboxes | The connector proves its access is limited to its mailbox before reading, hourly; refuses to run otherwise |
 
 ### Infrastructure compromise
 

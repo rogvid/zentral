@@ -32,6 +32,10 @@ and PostgreSQL.
 | Webhook authentication | Missing/wrong/cross-channel token, disabled or unknown channel → identical 401; Teams and Slack signatures, tampering, replay |
 | Ticket threading cannot be hijacked | Guessing a ticket key as another sender creates a new ticket |
 | Untrusted text is neutralised | HTML/script stripped; control characters removed |
+| Mail access is scoped | Tenant-wide permission, readable probe, inconclusive probe, unreadable token → **zero** mailbox reads; later widening stops the channel; sending is guarded too |
+| Mail filtering and loop protection | Allow/block lists, look-alike domains, automatic replies, own address; mailbox untouched by default |
+| Repeated bad tokens are throttled | Per-address limit, successful requests unaffected |
+| Text masking runs in linear time | 200 kB of pattern-bait must finish quickly (a quadratic pattern was found and fixed this way) |
 | Outbound calls are allow-listed | Metadata address, localhost, look-alike hosts, plain HTTP, embedded credentials → refused |
 | AI output cannot escape the allow-list | Unknown category/system, out-of-range confidence, multi-line summary |
 | AI cannot cause actions | Injection text + hostile model answer → no outbound request, no job, no state change beyond labels |
@@ -45,7 +49,11 @@ and PostgreSQL.
 
 Additionally: static analysis (`ruff` including security rules, `bandit`,
 strict `mypy`), dependency audits (`pip-audit`, `npm audit`), and a browser
-walkthrough of the web client that fails on any console error or CSP violation.
+end-to-end test (`scripts/e2e.sh`) that signs in as every persona through the
+real sign-in flow and fails on any console error, Content-Security-Policy
+violation or unexpected HTTP error. It also checks that hostile ticket text is
+displayed and never executed, that stored secrets never reach the page, and
+that drafts never reach browser storage.
 
 ## Verified manually during development
 
@@ -63,7 +71,7 @@ walkthrough of the web client that fails on any console error or CSP violation.
 |---|---|
 | **Sign-in against a real Entra ID tenant** | Implemented to Microsoft's documented token format and flow; **never run against a live tenant** |
 | **Other OIDC providers** (Keycloak, Okta, Auth0, AD FS) | Validated against tokens shaped like each provider's; recipes not tested on live instances |
-| **Microsoft Graph mail** | Tested against a stubbed Graph API only |
+| **Microsoft Graph mail** | Tested against a stubbed Graph API only — including the scope check, whose assumptions about Exchange's responses (403 for an out-of-scope mailbox; no `Mail.*` role in the token under RBAC for Applications) follow Microsoft's documentation but have not been observed on a live tenant |
 | **Microsoft Teams** | Signature scheme and payload tested with constructed requests only |
 | **Anthropic API provider** | Tested against a stubbed API (the CLI provider was tested live) |
 | **On-prem model servers** | Protocol tested against a stub; not against a running Ollama/vLLM |

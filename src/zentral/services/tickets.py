@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true
 
 from zentral.db.models import (
+    AuditEvent,
     Contact,
     DeliveryStatus,
     Job,
@@ -22,6 +23,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.schemas import (
+    ActivityOut,
     MessageCreate,
     MessageOut,
     RequesterOut,
@@ -294,6 +296,51 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
         )
     ctx.audit("ticket.messages.read", "ticket", ticket.id, count=len(out), pii=pii)
     return out
+
+
+# What happened to a ticket, as opposed to who looked at it. Reads stay with auditors.
+ACTIVITY_ACTIONS = (
+    "ticket.created",
+    "ticket.ingested",
+    "ticket.message_received",
+    "ticket.updated",
+    "ticket.classified",
+    "automation.rule_applied",
+    "ticket.note_added",
+    "ticket.replied",
+    "message.delivered",
+    "message.delivery_failed",
+)
+
+
+async def ticket_activity(ctx: Ctx, ticket_id: int) -> list[ActivityOut]:
+    """The ticket's change history for the people working it."""
+    ticket = await load_ticket(ctx, ticket_id)
+    events = (
+        await ctx.session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.resource_type == "ticket",
+                AuditEvent.resource_id == str(ticket.id),
+                AuditEvent.action.in_(ACTIVITY_ACTIONS),
+                AuditEvent.outcome != "denied",
+            )
+            .order_by(AuditEvent.seq.desc())
+            .limit(200)
+        )
+    ).all()
+    names = await _user_names(ctx, {e.actor_id for e in events if e.actor_kind != "system"})
+    return [
+        ActivityOut(
+            occurred_at=e.occurred_at,
+            action=e.action,
+            actor_name="Zentral" if e.actor_kind == "system" else names.get(e.actor_id, "Staff"),
+            actor_kind=e.actor_kind,
+            channel=e.channel,
+            details=e.details,
+        )
+        for e in events
+    ]
 
 
 # --- commands ---------------------------------------------------------------------

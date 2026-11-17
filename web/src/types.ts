@@ -100,8 +100,24 @@ export interface User {
   email: string;
 }
 
+export interface Diagnostic {
+  name: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+}
+
+export interface Activity {
+  occurred_at: string;
+  action: string;
+  actor_name: string;
+  actor_kind: string;
+  channel: string;
+  details: Record<string, unknown>;
+}
+
 export interface ConnectorInfo {
   name: string;
+  config_schema: import("./components/SchemaForm").JsonSchema;
   capabilities: string[];
   secret_fields: string[];
   required_secrets: string[];
@@ -119,6 +135,10 @@ export interface Source {
   has_secrets: boolean;
   has_token: boolean;
   hook_url: string | null;
+  capabilities: string[];
+  last_ok_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
   ingest_token?: string | null;
 }
 

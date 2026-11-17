@@ -174,6 +174,21 @@ export function InboxPage() {
     return api.get<TicketPage>(`/tickets${base}${view === "all" ? "" : ACTIVE}`);
   }, [view, term, offset, system, urgentOnly]);
   const stats = useLoad(() => api.get<Stats>("/tickets/stats"), [page.data]);
+  const [fresh, setFresh] = useState(false);
+  const shownActive = stats.data?.active;
+
+  // Poll the (unaudited, content-free) counters; offer a refresh when they move.
+  useEffect(() => {
+    setFresh(false);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible" || shownActive === undefined) return;
+      api
+        .get<Stats>("/tickets/stats")
+        .then((latest) => setFresh(latest.active !== shownActive))
+        .catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [api, shownActive]);
 
   function show(next: View, opts: { urgent?: boolean; system?: string } = {}) {
     setView(next);
@@ -251,6 +266,11 @@ export function InboxPage() {
         />
       </div>
 
+      {fresh && (
+        <button className="banner-new" onClick={page.reload}>
+          The queue has changed — show the latest
+        </button>
+      )}
       {page.error ? (
         <ErrorState message={page.error} retry={page.reload} />
       ) : !data ? (

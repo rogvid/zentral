@@ -1,0 +1,301 @@
+# Zentral 1.0.0: from PR #22 to staging (and later production)
+
+Handoff for picking this up tomorrow evening. Work through the steps in order;
+each one says how to know it worked. Budget: about 15 minutes for steps 1–3,
+1–2 hours for staging (steps 4–7), depending on how much Azure setup already
+exists.
+
+## Where things stand
+
+| | |
+|---|---|
+| PR | [#22](https://github.com/rogvid/zentral/pull/22), branch `claude/dazzling-darwin-7hhcy5` → `main`, 8 commits |
+| CI on head `019c294` | All green: Backend (SQLite + PostgreSQL), Web client, Browser end-to-end, Documentation, Container image |
+| Mergeable | Yes, no conflicts |
+| Default branch | `main` ✓ |
+| Dependabot #1–#5, #7 | Closed as superseded by #22 ✓ |
+| Issues | #8 done, #20 done except branch protection, #9 prepared but not started |
+
+What #22 contains, briefly: KMS-backed key custody (#8), dependency upgrades,
+load test, sizing guide and two bugs fixed by it, restore drill (#20), a DPIA
+draft and a pen-test brief (#9), version 1.0.0, `CHANGELOG.md`, and a release
+workflow.
+
+**Not yet proven anywhere real**, which is what staging is for:
+
+- `release.yml` has never run (it only runs on a tag or by hand).
+- Azure Key Vault and Vault Transit were tested against fakes only.
+- The load test ran on one 4-vCPU box with everything on it.
+
+---
+
+## Step 1: Branch protection on `main` (5 min)
+
+Settings → Branches → Add branch ruleset (or classic rule) for `main`:
+
+- [ ] Require a pull request before merging
+- [ ] Require status checks to pass, and add these five (they appear in the
+      list once they have run on a PR, which they have on #22):
+  - `Backend (lint, types, tests)`
+  - `Web client`
+  - `Browser end-to-end`
+  - `Documentation`
+  - `Container image`
+- [ ] Require branches to be up to date before merging
+- [ ] Block force pushes and deletions
+
+**Done when** PR #22 shows "Required" next to those five checks. This closes
+the last open item of #20; close #20 by hand if merging #22 doesn't.
+
+## Step 2: Merge PR #22 (5 min)
+
+1. Skim [`CHANGELOG.md` → Upgrading](https://github.com/rogvid/zentral/blob/claude/dazzling-darwin-7hhcy5/CHANGELOG.md).
+   The one breaking change: **production refuses plain-text keys in the
+   environment** unless `ZENTRAL_ALLOW_ENV_KEYS=true`. Nothing is in production
+   yet, so this only matters for staging setup below.
+2. Merge. #21 used a merge commit; keep that for consistency.
+3. CI runs again on `main`.
+
+**Done when** CI on `main` is green and #8 shows as closed.
+
+## Step 3: Build a staging image (10 min, mostly waiting)
+
+1. Actions → **Release** → Run workflow → branch `main` → Run.
+2. It runs the full CI first, then publishes
+   `ghcr.io/rogvid/zentral:staging` and `:sha-<commit>`, with an SBOM and signed
+   provenance, and smoke-tests the published image.
+3. Copy the **digest** (`sha256:…`) from the "Publish image" job's log
+   (`build` step output) or from the package page:
+   github.com/rogvid/zentral/pkgs/container/zentral.
+4. Verify the provenance:
+
+    ```bash
+    gh attestation verify oci://ghcr.io/rogvid/zentral@sha256:<digest> -R rogvid/zentral
+    ```
+
+**If it fails**:
+
+- *permission denied on packages*: Settings → Actions → General → Workflow
+  permissions must allow the workflow to write packages. The workflow asks for
+  `packages: write`, but an organisation or repository policy can still cap it.
+- *attestation step fails on a private repo*: artifact attestations need a
+  public repository or GitHub Enterprise Cloud. Either make the package/repo
+  public or remove the `attest-build-provenance` step. The SBOM and provenance
+  from `build-push-action` remain.
+- *Don't dispatch while `main`'s own CI is running*: both share a concurrency
+  group and one run may cancel the other. Just re-run.
+
+If the package should be private, set its visibility on the package page and
+give the cluster a pull secret.
+
+## Step 4: Staging environment (30–60 min)
+
+Staging is production-shaped, with **no real personal data and nothing shared
+with production** (own tenant/app registrations, own Key Vault key, own
+database). Full guide:
+[`docs/operations/key-custody.md`](https://github.com/rogvid/zentral/blob/main/docs/operations/key-custody.md)
+and `docs/operations/deploy-kubernetes.md`.
+
+### 4a. Key Vault key and identity
+
+```bash
+# Premium vault or Managed HSM; soft-delete + purge protection ON
+az keyvault key create --vault-name <staging-kv> --name zentral-kek \
+  --kty RSA-HSM --size 3072 --ops wrapKey unwrapKey
+```
+
+- [ ] Managed identity for the pods, federated with service account
+      `zentral` in namespace `zentral-staging` (AKS workload identity)
+- [ ] Custom role with **only** `Microsoft.KeyVault/vaults/keys/unwrap/action`,
+      assigned to that identity **on the key**
+- [ ] Your own admin identity has wrap (*Key Vault Crypto User*), just-in-time
+      if you use PIM
+
+### 4b. Keyring and escrow copy (one-off admin pod)
+
+The Azure provider signs in with a **managed identity only** (no client
+secrets, by design), so `az login` on a laptop is not enough. Run the key
+commands in a short-lived pod under a separate **admin** identity that has
+wrap and unwrap on the key:
+
+- [ ] A second managed identity, `zentral-keyadmin`, with *Key Vault Crypto
+      User* on the key, federated with service account `zentral-keyadmin`
+      in `zentral-staging`
+
+```bash
+kubectl create namespace zentral-staging
+kubectl -n zentral-staging create serviceaccount zentral-keyadmin
+kubectl -n zentral-staging annotate serviceaccount zentral-keyadmin \
+  azure.workload.identity/client-id=<keyadmin-client-id>
+
+kubectl -n zentral-staging run keyadmin --rm -it --restart=Never \
+  --image=ghcr.io/rogvid/zentral@sha256:<digest> \
+  --overrides='{"metadata":{"labels":{"azure.workload.identity/use":"true"}},"spec":{"serviceAccountName":"zentral-keyadmin"}}' \
+  --env=ZENTRAL_ENV=production --env=ZENTRAL_KEY_PROVIDER=azure_keyvault \
+  --env=ZENTRAL_AZURE_KEYVAULT_KEY_ID=https://<staging-kv>.vault.azure.net/keys/zentral-kek \
+  --env=ZENTRAL_KEYRING_FILE=/tmp/keyring.json \
+  --command -- sh
+```
+
+Inside the pod:
+
+```sh
+zentral keys init                                   # writes /tmp/keyring.json
+zentral keys new-local-kek /tmp/escrow.kek
+ZENTRAL_LOCAL_KEK_FILE=/tmp/escrow.kek \
+  zentral keys rewrap --to-provider local_file --output /tmp/keyring-escrow.json
+cat /tmp/keyring.json; echo; cat /tmp/keyring-escrow.json; echo; cat /tmp/escrow.kek
+exit                                                # the pod and /tmp are deleted
+```
+
+Save the three outputs on your machine as `keyring.json`,
+`keyring-escrow.json` and `zentral-staging-escrow.kek`. Move the last two to
+the escrow medium. The `.kek` file **is** a secret: whoever has it and the
+escrow keyring has the keys. Then:
+
+```bash
+kubectl -n zentral-staging create configmap zentral-keyring --from-file=keyring.json
+```
+
+(Briefly having the escrow key in a pod is fine for staging. For production,
+do the escrow step on a hardened admin VM with a managed identity, so the
+escrow key never touches the cluster.)
+
+### 4c. Overlay and deploy
+
+Create `deploy/kubernetes/overlays/staging/kustomization.yaml` (example in
+`docs/operations/deploy-kubernetes.md`), with:
+
+- namespace `zentral-staging`
+- image `ghcr.io/rogvid/zentral` with `digest: sha256:<from step 3>`
+- ConfigMap patches: `ZENTRAL_PUBLIC_BASE_URL`, `ZENTRAL_ALLOWED_HOSTS`,
+  Entra tenant and client IDs (staging app registrations),
+  `ZENTRAL_AZURE_KEYVAULT_KEY_ID`
+- ServiceAccount patch: `azure.workload.identity/client-id`
+- Ingress host
+
+```bash
+cp deploy/kubernetes/base/secrets.env.example secrets.env   # database URL only
+kubectl -n zentral-staging create secret generic zentral-secrets --from-env-file=secrets.env
+shred -u secrets.env
+kubectl apply -k deploy/kubernetes/overlays/staging
+kubectl -n zentral-staging wait --for=condition=complete job/zentral-migrate --timeout=180s
+kubectl -n zentral-staging rollout status deploy/zentral-api
+```
+
+## Step 5: Prove staging (15 min)
+
+```bash
+kubectl -n zentral-staging exec deploy/zentral-api -- zentral doctor
+```
+
+**Must show** `✓ key custody: azure_keyvault: data key wrapped by https://…/keys/zentral-kek/<version>`.
+This is the first real Key Vault unwrap: it proves the managed identity, the
+role and the network path.
+
+If key custody fails, see the troubleshooting table at the bottom of
+`docs/operations/key-custody.md`. Most likely:
+
+- `no managed identity token`: pod label `azure.workload.identity/use: "true"`
+  and the service-account annotation.
+- `refused unwrapKey (HTTP 403)`: role not assigned on the key, or assigned
+  to a different identity.
+
+Then by hand:
+
+- [ ] Sign in as each role from the staging tenant (Admin, Agent, Viewer,
+      Auditor, PrivacyOfficer); each sees what `docs/compliance/rbac.md` says
+- [ ] Create a ticket through a webhook channel; it gets classified and routed
+- [ ] Portal: request a link to a test mailbox, sign in, reply, rate
+- [ ] Upload an image attachment; it gets scanned (needs ClamAV running)
+- [ ] `kubectl -n zentral-staging exec deploy/zentral-api -- zentral audit verify`
+
+## Step 6: Restore drill on staging (15 min)
+
+The drill needs `pg_dump`, `pg_restore`, `createdb` and `dropdb` matching the
+server version, a database role with `CREATEDB`, and the keys. Like step 4b,
+unwrapping through Key Vault needs a managed identity. So pick one:
+
+**A. From your laptop, with the escrow keys.** This also rehearses "Key Vault
+is gone":
+
+```bash
+kubectl -n zentral-staging port-forward svc/<postgres-service> 5432:5432 &   # or your DB's private endpoint
+ZENTRAL_ENV=development ZENTRAL_AUTH_MODE=dev \
+ZENTRAL_KEY_PROVIDER=local_file \
+ZENTRAL_KEYRING_FILE=/media/escrow/keyring-escrow.json \
+ZENTRAL_LOCAL_KEK_FILE=/media/escrow/zentral-staging-escrow.kek \
+  uv run python scripts/restore_drill.py "postgresql://zentral:<pw>@127.0.0.1:5432/zentral"
+```
+
+`ZENTRAL_ENV=development` is needed because production refuses the
+`local_file` provider. `doctor` warns about the identity provider; that's
+expected. The decryption and audit checks are what count.
+
+**B. From an Azure VM with the `zentral-keyadmin` managed identity**, using
+staging's real settings plus the escrow check:
+
+```bash
+uv run python scripts/restore_drill.py "postgresql://zentral@<staging-db>/zentral?sslmode=require" \
+  --escrow-keyring /media/escrow/keyring-escrow.json \
+  --escrow-kek /media/escrow/zentral-staging-escrow.kek
+```
+
+**Done when** the table ends in `passed`. Paste it into a "1.0.0 release"
+tracking issue. Do B (or A plus `zentral keys verify-escrow` from the admin
+pod) at least once before production.
+
+## Step 7 (optional): Load test with staging sizing
+
+Only against a **development-mode** copy with staging's CPU, memory and
+PostgreSQL size, never against staging itself (it needs dev sign-in). See
+`docs/operations/sizing.md` → "Measure your own installation". Skip if
+staging matches the recommendation table.
+
+---
+
+## Step 8: Start #9 (an hour of emails, then weeks of waiting)
+
+- [ ] Pick the tester; send them `docs/compliance/pentest-brief.md`, the threat
+      model, security architecture and security posture pages
+- [ ] Agree on the window, source IPs and contacts (rules of engagement section)
+- [ ] Give them staging (step 4) with synthetic data, test-tenant accounts for
+      every role, and read access to the repo
+- [ ] Hand `docs/compliance/dpia.md` to the DPO; fill in every **➜ Controller**
+      field
+
+## Step 9: Release 1.0.0 (only after #9)
+
+Gates in `docs/runbooks/release.md`. When the pen test's high and critical
+findings are fixed and re-tested, and the DPIA is signed:
+
+```bash
+git checkout main && git pull
+git tag -s v1.0.0 -m "Zentral 1.0.0" && git push origin v1.0.0
+```
+
+The Release workflow checks that the tag matches `pyproject.toml` (1.0.0) and
+`CHANGELOG.md`, publishes `:1.0.0`, and creates the GitHub release. If fixes
+land before then, add them to `CHANGELOG.md` under `[1.0.0]` first. Or ship
+them as 1.0.1 if 1.0.0 is already tagged.
+
+Then go live per `docs/runbooks/release.md` → "Go live / promote": production
+gets its **own** Key Vault key, keyring and escrow, and runs the image **by
+digest**.
+
+---
+
+## Known loose ends
+
+| Item | Why it's open | When |
+|---|---|---|
+| Release workflow untested | Runs only on dispatch or tag | Step 3 tests it |
+| Real Key Vault / Vault | Tested against fakes | Step 5 tests Key Vault; Vault only if you use it |
+| Concurrency of manual release vs `main` CI | Shared concurrency group; a CI-config change was blocked by the permission system in the session | Harmless; re-run if cancelled |
+| Load test on real hardware | Measured on one 4-vCPU box | Optional step 7 |
+| Key admin from a laptop | The Azure provider uses managed identity only, so `zentral keys …` must run where one exists (step 4b) | Follow-up worth considering: an opt-in Azure CLI credential for admin commands only |
+| `docs/roadmap.md` | Says #8 and #20 done, #9 ready | Update when #9 starts |
+| Search beyond 1,000 tickets (#14) | Known limit, documented | After go-live, as volume grows |
+
+The cloud session that did this work is ephemeral: its container and local
+test database are gone by tomorrow. Everything that matters is in PR #22.

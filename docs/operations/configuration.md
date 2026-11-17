@@ -59,6 +59,10 @@ in the working directory is read too). Generate a starting point with
     ticket on Friday evening is due Friday evening; a normal one waits for
     Monday morning.
 
+`ZENTRAL_ATTACHMENTS_ENABLED`, `ZENTRAL_ATTACHMENT_SCANNER`, `ZENTRAL_CLAMAV_HOST`
+:   [Attachments](../guides/attachments.md): off until a malware scanner is
+    running. The `none` scanner is refused in production.
+
 `ZENTRAL_PORTAL_ENABLED`, `ZENTRAL_PORTAL_MAIL_CHANNEL`
 :   The [requester portal](../guides/requester-portal.md), and the mail channel
     (by name) that sends its sign-in links.
@@ -142,6 +146,12 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_TIMEZONE` | `UTC` | str |
 | `ZENTRAL_HOLIDAYS` | *(empty)* | list[str] |
 | `ZENTRAL_SLA_CALENDAR` | `{'urgent': '24x7', 'high': 'business', 'normal': 'business', 'low': 'business'}` | dict[str, str] |
+| `ZENTRAL_ATTACHMENTS_ENABLED` | `False` | bool |
+| `ZENTRAL_ATTACHMENT_MAX_BYTES` | `10485760` | int |
+| `ZENTRAL_ATTACHMENTS_PER_TICKET` | `20` | int |
+| `ZENTRAL_ATTACHMENT_SCANNER` | `clamav` | one of ['clamav', 'none'] |
+| `ZENTRAL_CLAMAV_HOST` | `clamav` | str |
+| `ZENTRAL_CLAMAV_PORT` | `3310` | int |
 | `ZENTRAL_PORTAL_ENABLED` | `False` | bool |
 | `ZENTRAL_PORTAL_MAIL_CHANNEL` | *(empty)* | str |
 | `ZENTRAL_PORTAL_LINK_MINUTES` | `15` | int |

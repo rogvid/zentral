@@ -30,6 +30,7 @@ from zentral.db.models import (
 from zentral.schemas import ContactOut, ErasureOut
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
+from zentral.services import attachments
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound
 from zentral.services.tickets import ERASED, ticket_key
@@ -107,6 +108,10 @@ async def export_contact(ctx: Ctx, contact_id: uuid.UUID) -> dict[str, Any]:
                     # included by default; review them manually if required.
                     if m.kind != "note"
                 ],
+                # Files the person sent; files staff attached are internal, like notes.
+                "attachments": await attachments.export(
+                    ctx, ticket.id, author_contact_id=contact.id
+                ),
             }
         )
     ctx.audit("privacy.exported", "contact", contact.id, tickets=len(exported))
@@ -154,6 +159,7 @@ async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:
     await ctx.session.execute(
         update(Rating).where(Rating.ticket_id == ticket.id).values(comment=None)
     )
+    await attachments.remove_for_ticket(ctx, ticket.id)
     ticket.subject = ERASED
     ticket.ai_summary = None
     ticket.requester_id = None

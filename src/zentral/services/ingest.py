@@ -26,8 +26,9 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.security.crypto import get_cipher
-from zentral.services import notifications, sla
+from zentral.services import attachments, notifications, sla
 from zentral.services.context import Ctx
+from zentral.services.errors import ValidationFailed
 from zentral.services.tickets import (
     apply_system,
     follow_merges,
@@ -35,6 +36,8 @@ from zentral.services.tickets import (
     ticket_key,
 )
 from zentral.text import clean_text, single_line
+
+MAX_INBOUND_ATTACHMENTS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +128,26 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             await ctx.session.delete(ticket)
         return IngestOutcome(winner, ticket_key(ctx, winner), created=False, duplicate=True)
 
+    for item in msg.attachments[:MAX_INBOUND_ATTACHMENTS]:
+        try:
+            await attachments.add(
+                ctx,
+                ticket,
+                item.filename,
+                item.data,
+                message_id=message.id,
+                author_contact_id=contact.id if contact else None,
+            )
+        except ValidationFailed as exc:
+            # A refused file never costs the requester their message.
+            ctx.audit(
+                "attachment.dropped",
+                "ticket",
+                ticket.id,
+                outcome="failure",
+                reason=str(exc)[:80],
+                size=len(item.data),
+            )
     if not created and ticket.assignee_id:
         notifications.notify(ctx, {ticket.assignee_id}, "requester_replied", ticket.id)
     if created:

@@ -13,8 +13,10 @@
 | **Plug-ins** (e.g. Slack) | Your choice | New channels without changing Zentral | Normalised by the plug-in |
 
 Zentral collects only what it needs to answer the request: who asked (so the
-answer reaches them) and what they wrote (so someone can help). Attachments,
-HTML and formatting are not ingested.
+answer reaches them) and what they wrote (so someone can help). HTML and
+formatting are not ingested. Files and screenshots are accepted only when
+[attachments](../guides/attachments.md) are enabled, and only after they are
+checked by content, stripped of metadata and scanned for malware.
 
 ## What happens to every message
 

@@ -13,6 +13,8 @@ export interface AppConfig {
   ticket_prefix: string;
   categories: string[];
   business_hours: string;
+  attachments_enabled: boolean;
+  attachment_max_bytes: number;
   timezone: string;
   require_system_to_resolve: boolean;
 }
@@ -111,6 +113,7 @@ export interface Message {
   author_type: "requester" | "staff" | "system";
   delivery_status: string;
   created_at: string;
+  attachments: AttachmentInfo[];
 }
 
 export interface Team {
@@ -235,4 +238,15 @@ export interface AppNotification {
 export interface NotificationPage {
   items: AppNotification[];
   unread: number;
+}
+
+export interface AttachmentInfo {
+  id: string;
+  message_id: string | null;
+  filename: string;
+  content_type: string;
+  size: number;
+  status: "scanning" | "clean" | "blocked";
+  from_requester: boolean;
+  created_at: string;
 }

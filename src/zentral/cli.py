@@ -208,6 +208,10 @@ def keys_rotate(batch: int = 500) -> None:
         ("contacts", "id", "email"),
         ("contacts", "id", "display_name"),
         ("ingest_sources", "id", "secrets"),
+        ("reply_templates", "id", "body"),
+        ("ratings", "ticket_id", "comment"),
+        ("attachments", "id", "filename"),
+        ("attachments", "id", "data"),
     ]
 
     async def main() -> int:

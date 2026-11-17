@@ -39,6 +39,12 @@ Response: `202 {"tickets": "ZEN-128"}`.
 | `thread_key` | no | Messages with the same key are appended to the same open ticket — use an alert fingerprint so a flapping alert does not open fifty tickets |
 | `external_id` | no | Idempotency key: the same ID is accepted once, retries are harmless. The `Idempotency-Key` header works too |
 | `requester_email`, `requester_name` | no | If the issue is raised on behalf of a person |
+| `context` | no | Up to 20 short facts — `{"page": "/orders/42", "app_version": "3.14"}` — shown under the description |
+| `attachments` | no | Up to 3 files: `[{"filename": "screen.png", "content_base64": "…"}]`. Needs [attachments](../attachments.md) enabled; a refused file is dropped, the report is kept |
+
+Building a "Report a problem" button into your own app? See
+[Report an issue from your own app](../report-button.md) — the token must stay
+on your server.
 
 Unknown fields are ignored, so you can usually point an existing alert template
 at Zentral and map two or three fields.
@@ -47,7 +53,8 @@ at Zentral and map two or three fields.
 
 - A message on a **resolved** ticket with the same `thread_key` reopens it; on
   a **closed** ticket it opens a new one.
-- Requests over 1 MiB are rejected with `413`.
+- Requests over 1 MiB are rejected with `413` — or, with attachments enabled,
+  over 1 MiB plus room for three files.
 - Any authentication problem — wrong token, unknown channel, disabled channel —
   returns the same bare `401`.
 - Rate limit: `ZENTRAL_HOOK_RATE_LIMIT_PER_MINUTE` per channel and source

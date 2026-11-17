@@ -10,15 +10,17 @@ grants, so this (with SameSite=Strict) stops cross-site request forgery.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 
 from zentral.api.deps import client_ip, get_runtime, request_meta
 from zentral.api.ratelimit import RateLimiter
+from zentral.api.routes.tickets import file_response, read_upload
 from zentral.db.models import Contact, System
 from zentral.runtime import Runtime
 from zentral.schemas import (
@@ -33,7 +35,7 @@ from zentral.schemas import (
     RatingIn,
 )
 from zentral.security.principal import requester_principal, system_principal
-from zentral.services import portal
+from zentral.services import attachments, portal
 from zentral.services.context import Ctx
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -214,3 +216,28 @@ async def rate(s: SessionDep, ticket_id: int, data: RatingIn) -> PortalTicketOut
     out = await portal.rate(s.ctx, s.contact, ticket_id, data)
     await s.ctx.commit()
     return out
+
+
+@router.post("/tickets/{ticket_id}/attachments", status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    request: Request,
+    runtime: GuardDep,
+    s: SessionDep,
+    ticket_id: int,
+    filename: Annotated[str, Query(min_length=1, max_length=200)],
+) -> PortalMessageOut:
+    """Send a file (a screenshot, a log) on one of your requests."""
+    _throttle(request, runtime, "upload", 20)
+    data = await read_upload(request, s.ctx)
+    out = await portal.add_file(s.ctx, s.contact, ticket_id, filename, data)
+    await s.ctx.commit()
+    return out
+
+
+@router.get("/tickets/{ticket_id}/attachments/{attachment_id}")
+async def download_attachment(s: SessionDep, ticket_id: int, attachment_id: uuid.UUID) -> Response:
+    attachment, data = await attachments.requester_download(
+        s.ctx, s.contact.id, ticket_id, attachment_id
+    )
+    await s.ctx.commit()
+    return file_response(attachment, data)

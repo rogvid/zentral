@@ -125,3 +125,25 @@ export function parseTargets(text: string): Record<string, number> | null {
   }
   return out;
 }
+
+/** "1.4 MB", "820 KB", "512 B". */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Files pasted into a text box (a screenshot from the clipboard), with sensible names. */
+export function pastedFiles(items: { kind: string; type: string; getAsFile: () => File | null }[], now: Date = new Date()): File[] {
+  const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  return items
+    .filter((item) => item.kind === "file")
+    .map((item, index) => {
+      const file = item.getAsFile();
+      if (!file) return null;
+      const extension = item.type === "image/jpeg" ? "jpg" : item.type.split("/")[1] ?? "bin";
+      const generic = !file.name || file.name === "image.png";
+      return generic ? new File([file], `screenshot-${stamp}${index ? `-${index}` : ""}.${extension}`, { type: file.type }) : file;
+    })
+    .filter((file): file is File => file !== null);
+}

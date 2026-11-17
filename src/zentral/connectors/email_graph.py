@@ -30,6 +30,7 @@ see ``GraphMailConfig``.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import re
 import time
@@ -53,6 +54,7 @@ from zentral.connectors.base import (
     ConnectorError,
     ConnectorRejected,
     Diagnostic,
+    InboundAttachment,
     InboundMessage,
     OutboundMessage,
     PollResult,
@@ -177,6 +179,14 @@ class GraphMailConfig(BaseModel):
         max_length=2000,
         title="Acknowledgement text",
         description="Leave empty for the standard text. {ticket_key} is replaced by the ticket number.",
+    )
+    ingest_attachments: bool = Field(
+        default=True,
+        title="Keep attached files",
+        description=(
+            "Store files and pasted screenshots that arrive with a message (when attachments "
+            "are enabled on this desk). Each is checked, cleaned and malware-scanned first."
+        ),
     )
     save_to_sent_items: bool = Field(
         default=True,
@@ -412,7 +422,7 @@ class GraphMailConnector(Connector):
                 "$top": str(self.config.page_size),
                 "$select": (
                     "id,internetMessageId,conversationId,subject,from,receivedDateTime,body,"
-                    "internetMessageHeaders"
+                    "internetMessageHeaders,hasAttachments"
                 ),
             },
             headers={"Prefer": 'outlook.body-content-type="text"'},
@@ -439,11 +449,43 @@ class GraphMailConnector(Connector):
                     sender_name=str(address.get("name") or "") or None,
                     thread_id=str(item.get("conversationId") or "") or None,
                     received_at=_parse(received),
+                    attachments=await self._attachments(item),
                 )
             )
             if self.config.after_ingest == "mark_read" and item.get("id"):
                 ack.append(str(item["id"]))
         return PollResult(messages=messages, cursor={"received_after": latest}, ack=ack)
+
+    async def _attachments(self, item: dict[str, Any]) -> tuple[InboundAttachment, ...]:
+        """Files on a message, including screenshots pasted into the body (inline)."""
+        settings = self.ctx.settings
+        ref = str(item.get("id") or "")
+        if not (
+            item.get("hasAttachments")
+            and self.config.ingest_attachments
+            and settings.attachments_enabled
+            and re.fullmatch(r"[A-Za-z0-9_=-]{1,300}", ref)
+        ):
+            return ()
+        resp = await self._request(
+            "GET",
+            f"{self._user_url(self.config.mailbox)}/messages/{ref}/attachments",
+            params={"$top": "10"},
+        )
+        files: list[InboundAttachment] = []
+        for att in resp.json().get("value", []):
+            # Only plain files: never attached mail items or cloud links.
+            if att.get("@odata.type") != "#microsoft.graph.fileAttachment":
+                continue
+            if int(att.get("size") or 0) > settings.attachment_max_bytes * 2:
+                continue  # too large to keep (checked exactly after decoding)
+            try:
+                data = base64.b64decode(str(att.get("contentBytes") or ""), validate=True)
+            except (ValueError, binascii.Error):
+                continue
+            if data:
+                files.append(InboundAttachment(str(att.get("name") or "attachment"), data))
+        return tuple(files)
 
     async def acknowledge(self, refs: list[str]) -> None:
         for ref in refs:

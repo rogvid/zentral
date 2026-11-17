@@ -34,6 +34,7 @@ from sqlalchemy import delete, func, select
 
 from zentral.connectors.base import OutboundMessage
 from zentral.db.models import (
+    Attachment,
     Contact,
     DeliveryStatus,
     IngestSource,
@@ -47,6 +48,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.schemas import (
+    AttachmentOut,
     PortalMessageOut,
     PortalProfile,
     PortalTicketDetail,
@@ -55,7 +57,7 @@ from zentral.schemas import (
     RatingIn,
 )
 from zentral.security.crypto import get_cipher
-from zentral.services import notifications, sla
+from zentral.services import attachments, notifications, sla
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound, ValidationFailed
 from zentral.services.tickets import ERASED, apply_system, load_system, ticket_key
@@ -277,12 +279,23 @@ async def get_ticket(ctx: Ctx, contact: Contact, ticket_id: int) -> PortalTicket
             .order_by(Message.created_at)
         )
     ).all()
+    # Only files they sent themselves: what staff attach is internal, like notes.
+    own_files: dict[uuid.UUID | None, list[AttachmentOut]] = {}
+    for a in (
+        await ctx.session.scalars(
+            select(Attachment)
+            .where(Attachment.ticket_id == ticket.id, Attachment.author_contact_id == contact.id)
+            .order_by(Attachment.created_at)
+        )
+    ).all():
+        own_files.setdefault(a.message_id, []).append(attachments.out(ctx, a, names=True))
     out = [
         PortalMessageOut(
             from_you=m.kind == MessageKind.INBOUND,
             author="You" if m.kind == MessageKind.INBOUND else "Service desk",
             body=m.body,
             created_at=m.created_at,
+            attachments=own_files.get(m.id, []) if m.kind == MessageKind.INBOUND else [],
         )
         for m in messages
         if m.body != ERASED
@@ -318,6 +331,38 @@ async def add_message(ctx: Ctx, contact: Contact, ticket_id: int, body: str) -> 
         notifications.notify(ctx, {ticket.assignee_id}, "requester_replied", ticket.id)
     ctx.audit("ticket.message_received", "ticket", ticket.id, via="portal")
     return PortalMessageOut(from_you=True, author="You", body=text, created_at=message.created_at)
+
+
+async def add_file(
+    ctx: Ctx, contact: Contact, ticket_id: int, filename: str, data: bytes
+) -> PortalMessageOut:
+    """A file from the requester arrives as a message of its own, like a mail attachment."""
+    ticket = await _own_ticket(ctx, contact, ticket_id)
+    if ticket.status == TicketStatus.CLOSED or ticket.scrubbed_at is not None:
+        raise ValidationFailed("this request is closed; please start a new one")
+    message = Message(
+        ticket_id=ticket.id,
+        kind=MessageKind.INBOUND,
+        body="Sent a file.",
+        author_contact_id=contact.id,
+        created_at=utcnow(),
+    )
+    ctx.session.add(message)
+    await ctx.session.flush()
+    attachment = await attachments.add(
+        ctx, ticket, filename, data, message_id=message.id, author_contact_id=contact.id
+    )
+    message.body = f"Sent {attachment.filename}."
+    ticket.updated_at = utcnow()
+    if ticket.assignee_id:
+        notifications.notify(ctx, {ticket.assignee_id}, "requester_replied", ticket.id)
+    return PortalMessageOut(
+        from_you=True,
+        author="You",
+        body=message.body,
+        created_at=message.created_at,
+        attachments=[attachments.out(ctx, attachment, names=True)],
+    )
 
 
 async def create_ticket(ctx: Ctx, contact: Contact, data: PortalTicketIn) -> PortalTicketOut:

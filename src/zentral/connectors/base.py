@@ -62,6 +62,15 @@ class NoConfig(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InboundAttachment:
+    """A file that came with an inbound message. Checked and scanned by Zentral,
+    never trusted for its name or declared type."""
+
+    filename: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """A message from the outside world, normalised."""
 
@@ -76,6 +85,7 @@ class InboundMessage:
     priority: str | None = None
     system: str | None = None  # key of the system the message concerns, if the sender knows
     received_at: datetime | None = None
+    attachments: tuple[InboundAttachment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

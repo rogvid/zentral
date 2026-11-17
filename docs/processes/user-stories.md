@@ -17,7 +17,7 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | a resolved issue to reopen if I say it isn't fixed | I'm not sent back to the start | 7-day grace period |
 | ✓ | to see and get my data, or have it deleted | my rights are respected | [Data-subject requests](data.md#requests) |
 | ✓ **new** | a self-service page listing my requests, where I can answer and open new ones | I can check progress without writing an e-mail | [Requester portal](../guides/requester-portal.md) |
-| ◻ | to send a screenshot or log file | the desk sees what I see | Not yet: attachments need malware scanning and storage design |
+| ✓ **new** | to send a screenshot or log file — by e-mail, in the portal, or from the app I'm using | the desk sees what I see | [Attachments](../guides/attachments.md), [report button](../guides/report-button.md) |
 | ✓ **new** | to rate the help I got | the desk learns | Rating in the portal; *Requester satisfaction* in Insights |
 
 ## Agent

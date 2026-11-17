@@ -96,6 +96,7 @@ generated from the connector's settings:
 | **After ingestion** | `leave` | `leave`: the mailbox is never modified. `mark_read`: mark ingested mail as read (needs `Mail.ReadWrite`) |
 | **Send replies** | on | Deliver agents' replies from this mailbox. Off = read-only channel (no `Mail.Send` needed) |
 | **Allowed recipient domains** | *(any)* | Only send replies to these domains — e.g. your own, for an internal desk |
+| **Keep attached files** | on | Store files and pasted screenshots that come with a message, when [attachments](../attachments.md) are enabled. Mail items and cloud links are skipped |
 | **Save replies to Sent Items** | on | Keep a copy of sent replies in the mailbox |
 | **Acknowledge new tickets** | on | Send the requester a short receipt with the ticket key. Needs *Send replies* |
 | **Acknowledgement text** | *(built-in)* | Your own wording; `{ticket_key}` is replaced with the key. Plain text, no personal data |
@@ -180,7 +181,9 @@ the policy for one mailbox — choose a probe that the policy must exclude.
   ticket key: someone who spoofs an address learns nothing, and the real owner
   gets one short, harmless message. For an internal desk, restrict *Allowed
   recipient domains* to your own.
-- **Attachments are ignored** (they stay in the mailbox).
+- **Attachments** are kept when [enabled](../attachments.md): files and screenshots
+  pasted into the mail are checked, cleaned and scanned like any other file.
+  They also stay in the mailbox.
 
 ## Operations
 

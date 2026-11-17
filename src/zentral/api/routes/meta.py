@@ -83,6 +83,8 @@ async def public_config(rt: RuntimeDep) -> dict[str, Any]:
         # Shown next to targets so people know which hours count.
         "business_hours": s.business_hours,
         "timezone": s.timezone,
+        "attachments_enabled": s.attachments_enabled,
+        "attachment_max_bytes": s.attachment_max_bytes,
     }
 
 

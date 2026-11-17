@@ -1,3 +1,5 @@
+import type { AttachmentInfo } from "../types";
+
 // The portal talks only to /api/v1/portal, with its session in an HttpOnly
 // cookie the page cannot read. Every call carries the portal header, which the
 // server requires as protection against cross-site request forgery.
@@ -31,6 +33,33 @@ export async function portal<T>(method: string, path: string, body?: unknown): P
   return payload as T;
 }
 
+/** Send a file (raw body) to one of your requests. */
+export async function portalUpload<T>(ticketId: number, file: File): Promise<T> {
+  const response = await fetch(`/api/v1/portal/tickets/${ticketId}/attachments?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: { "X-Zentral-Portal": "1", "Content-Type": "application/octet-stream" },
+    body: file,
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = (payload as { detail?: unknown } | null)?.detail;
+    throw new PortalError(response.status, typeof detail === "string" ? `${file.name}: ${detail}` : `${file.name} could not be sent`);
+  }
+  return payload as T;
+}
+
+export async function portalFile(ticketId: number, attachmentId: string): Promise<Blob> {
+  const response = await fetch(`/api/v1/portal/tickets/${ticketId}/attachments/${attachmentId}`, {
+    headers: { "X-Zentral-Portal": "1" },
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!response.ok) throw new PortalError(response.status, "The file could not be opened");
+  return response.blob();
+}
+
 export interface Profile {
   display_name: string;
   email: string;
@@ -55,6 +84,7 @@ export interface PortalMessage {
   author: string;
   body: string;
   created_at: string;
+  attachments: AttachmentInfo[];
 }
 
 export interface RequestDetail {

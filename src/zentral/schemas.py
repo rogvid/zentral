@@ -98,6 +98,17 @@ class TicketPage(Out):
     offset: int
 
 
+class AttachmentOut(Out):
+    id: uuid.UUID
+    message_id: uuid.UUID | None
+    filename: str
+    content_type: str
+    size: int
+    status: str  # scanning | clean | blocked
+    from_requester: bool
+    created_at: datetime
+
+
 class MessageOut(Out):
     id: uuid.UUID
     kind: str
@@ -106,6 +117,7 @@ class MessageOut(Out):
     author_type: Literal["requester", "staff", "system"]
     delivery_status: str
     created_at: datetime
+    attachments: list[AttachmentOut] = Field(default_factory=list)
 
 
 class ActivityOut(Out):
@@ -264,6 +276,7 @@ class PortalMessageOut(Out):
     author: str
     body: str
     created_at: datetime
+    attachments: list[AttachmentOut] = Field(default_factory=list)
 
 
 class PortalTicketDetail(Out):

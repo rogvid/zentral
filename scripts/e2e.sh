@@ -24,6 +24,8 @@ export ZENTRAL_STATIC_DIR="$root/web/dist"
 export ZENTRAL_PUBLIC_BASE_URL="http://127.0.0.1:$port"
 export ZENTRAL_LOG_LEVEL=WARNING
 export ZENTRAL_PORTAL_ENABLED=true
+export ZENTRAL_ATTACHMENTS_ENABLED=true
+export ZENTRAL_ATTACHMENT_SCANNER=none   # development only; refused in production
 export ZENTRAL_PORTAL_MAIL_CHANNEL="Monitoring & forms"
 
 uv run zentral db upgrade >/dev/null

@@ -26,6 +26,20 @@ class EncryptedText(TypeDecorator[str]):
         return None if value is None else get_cipher().decrypt(value)
 
 
+class EncryptedBytes(TypeDecorator[bytes]):
+    """Binary content (attachments), encrypted like text. Stored as the Fernet token,
+    so key rotation re-encrypts it with the same code path as every other field."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: bytes | None, dialect: Dialect) -> str | None:
+        return None if value is None else get_cipher().encrypt_bytes(value)
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> bytes | None:
+        return None if value is None else get_cipher().decrypt_bytes(value)
+
+
 class EncryptedJSON(TypeDecorator[dict[str, Any]]):
     """A JSON object stored as a single encrypted blob (connector secrets)."""
 

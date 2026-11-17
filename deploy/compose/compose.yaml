@@ -7,6 +7,7 @@
 #
 # Topology: caddy (TLS) → api ─┐
 #                      worker ─┴→ db          (+ optional on-prem model: --profile ai)
+#                                             (+ optional malware scanner: --profile attachments)
 #
 # Only Caddy publishes ports. The database and the model server sit on an
 # internal network with no route to or from the internet.
@@ -100,6 +101,18 @@ services:
       - ollama-data:/root/.ollama
     networks: [backend, egress]
 
+  # Malware scanner for attachments. Start with: docker compose --profile attachments up -d
+  # and set ZENTRAL_ATTACHMENTS_ENABLED=true (ZENTRAL_CLAMAV_HOST defaults to "clamav").
+  # It downloads signature updates itself, hence the egress network.
+  clamav:
+    profiles: [attachments]
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    networks: [backend, egress]
+    security_opt: ["no-new-privileges:true"]
+
 networks:
   edge:
     ipam:
@@ -114,3 +127,4 @@ volumes:
   caddy-data:
   caddy-config:
   ollama-data:
+  clamav-data:

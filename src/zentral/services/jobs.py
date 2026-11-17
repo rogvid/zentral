@@ -41,7 +41,7 @@ from zentral.db.models import (
 )
 from zentral.runtime import Runtime
 from zentral.security.principal import Principal
-from zentral.services import notifications, portal, privacy
+from zentral.services import attachments, notifications, portal, privacy
 from zentral.services.context import Ctx
 from zentral.services.ingest import ingest
 from zentral.services.tickets import auto_close, ticket_key
@@ -66,6 +66,7 @@ class Worker:
             "escalation_sweep": self._escalate,
             "audit_archive": self._audit_archive,
             "send_portal_link": self._send_portal_link,
+            "scan_attachment": self._scan_attachment,
         }
 
     # -- queue mechanics -------------------------------------------------------------
@@ -273,6 +274,9 @@ class Worker:
         await run_audit_housekeeping(
             ctx.session, self.rt.trail, directory, settings.audit_keep_days, ctx.principal
         )
+
+    async def _scan_attachment(self, ctx: Ctx, payload: dict[str, object]) -> None:
+        await attachments.scan(ctx, self.rt.scanner, uuid.UUID(str(payload["attachment_id"])))
 
     async def _send_portal_link(self, ctx: Ctx, payload: dict[str, object]) -> None:
         source = await portal.portal_source(ctx)

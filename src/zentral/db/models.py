@@ -26,9 +26,9 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, deferred, mapped_column, relationship
 
-from zentral.db.types import EncryptedJSON, EncryptedText, UTCDateTime
+from zentral.db.types import EncryptedBytes, EncryptedJSON, EncryptedText, UTCDateTime
 
 
 def utcnow() -> datetime:
@@ -280,6 +280,42 @@ class Notification(Base):
     read_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     __table_args__ = (Index("ix_notifications_user", "user_id", "created_at"),)
+
+
+class AttachmentStatus(StrEnum):
+    SCANNING = "scanning"  # stored, not yet cleared by the malware scanner
+    CLEAN = "clean"  # may be opened
+    BLOCKED = "blocked"  # malware found: content destroyed, metadata kept
+
+
+class Attachment(Base):
+    """A file on a ticket (screenshots, logs, PDFs).
+
+    The content is checked by its bytes against an allow-list, stripped of
+    metadata (photo EXIF/GPS, text chunks), encrypted, and malware-scanned
+    before anyone can open it. Opening one needs ``ticket:read_pii``.
+    """
+
+    __tablename__ = "attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), index=True
+    )
+    filename: Mapped[str] = mapped_column(EncryptedText)  # names can be personal data
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default=AttachmentStatus.SCANNING)
+    # Loaded only when the content is actually needed (downloads, scanning).
+    data: Mapped[bytes | None] = deferred(mapped_column(EncryptedBytes))
+    author_user_id: Mapped[str | None] = mapped_column(String(64))
+    author_contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    scanned_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class PortalToken(Base):

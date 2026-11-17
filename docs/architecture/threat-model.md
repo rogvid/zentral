@@ -44,6 +44,8 @@ beyond their role, any AI model's output.
 | Steal or replay a portal link | Single use, 15 minutes, only the hash stored, kept out of server logs and history (URL fragment, removed on arrival), rate-limited per address | Someone who can read the requester's mailbox — the same exposure as e-mail itself |
 | Hijack or forge portal requests (CSRF, XSS) | HttpOnly SameSite=Strict cookie scoped to the portal API; mandatory custom header; strict CSP; server-side sessions revoked on sign-out and erasure | Browser zero-day |
 | Use a portal session to reach staff data | Requesters hold no permission; every portal call checks ticket ownership; notes, AI output and staff names are never in portal responses; staff tokens and portal cookies are not interchangeable | — |
+| Upload malware or a script disguised as an image | Type judged by content against an allow-list (no SVG/HTML/Office/executables); malware scan before anyone can open; downloads only, with `sandbox` CSP and `nosniff` | Zero-day malware unknown to the scanner |
+| Leak location or identity through file metadata | EXIF/XMP/IPTC/comments and PNG text chunks stripped before storage | Information visible *in* the picture |
 | XSS via ticket content | Text-only storage and rendering; strict CSP | Browser zero-day |
 | Enumerate tickets or channels | Uniform `404`/`401`; server-side scope filter | — |
 | Denial of service | Size limits, rate limits, bounded queries, linear-time text matching, throttling of repeated bad tokens | Volumetric attacks: needs an upstream WAF/CDN |
@@ -83,7 +85,8 @@ beyond their role, any AI model's output.
 
 Stated plainly so nobody assumes otherwise:
 
-- **Attachments** are not ingested (no malware-scanning pipeline yet).
+- **Attachment scanning** is as good as ClamAV's signatures; a novel threat in
+  a PDF can pass. PDFs are offered as downloads only, never rendered by Zentral.
 - **No built-in WAF, DDoS protection or intrusion detection.**
 - **Key custody** is environment-variable based; there is no HSM/KMS envelope
   encryption yet.

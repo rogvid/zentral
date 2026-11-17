@@ -92,6 +92,12 @@ def create_app(
     app.add_middleware(
         HardeningMiddleware,
         max_body_bytes=settings.max_body_bytes,
+        # Room for one file, or a webhook with up to three base64-encoded files.
+        upload_body_bytes=(
+            settings.max_body_bytes + 3 * (settings.attachment_max_bytes * 4 // 3 + 4)
+            if settings.attachments_enabled
+            else 0
+        ),
         hsts=settings.is_production,
         connect_origins=meta.sign_in_origins(settings),
     )

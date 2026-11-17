@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileList } from "../components/Files";
 import { refreshNotifications } from "../components/Notifications";
 import { useApp, useLoad } from "../context";
-import { channelName, fillTemplate, percent, relativeTime, titleCase, until } from "../lib";
-import type { Activity, Message, Priority, Status, SystemInfo, TargetState, Team, Template, Ticket, User } from "../types";
+import { channelName, fillTemplate, pastedFiles, percent, relativeTime, titleCase, until } from "../lib";
+import type { Activity, AttachmentInfo, Message, Priority, Status, SystemInfo, TargetState, Team, Template, Ticket, User } from "../types";
 import { firstName } from "../brand";
 import { ChannelIcon, SparkIcon } from "../icons";
 import { useConfirm } from "../components/Confirm";
@@ -216,7 +217,10 @@ function Tags({ ticket, editable, onChange }: { ticket: Ticket; editable: boolea
 }
 
 function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
-  const { api, can, notify, me } = useApp();
+  const { api, can, notify, me, config } = useApp();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(0);
+  const canAttach = config.attachments_enabled && can("ticket:note");
   const canReply = can("ticket:reply") && ticket.requester !== null;
   const templates = useLoad(() => api.get<Template[]>("/templates").catch(() => []), []);
   const canNote = can("ticket:note");
@@ -237,6 +241,23 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
     const requester = ticket.requester?.email ? firstName(ticket.requester.display_name) : null;
     const text = fillTemplate(template.body, { ticketKey: ticket.key, requester, agent: me.display_name });
     setBody(body.trim() ? `${body.trimEnd()}\n\n${text}` : text);
+  }
+
+  async function attach(files: File[]) {
+    if (!canAttach || files.length === 0) return;
+    setUploading((n) => n + files.length);
+    for (const file of files) {
+      try {
+        if (file.size > config.attachment_max_bytes) throw new Error(`${file.name} is too large`);
+        await api.upload(`/tickets/${ticket.id}/attachments?filename=${encodeURIComponent(file.name)}`, file);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Could not attach the file", "error");
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+    notify("Attached. It can be opened once the malware check has passed.");
+    onSent();
   }
 
   async function send() {
@@ -280,6 +301,13 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
             : "A note for colleagues — it never leaves the desk."
         }
         onChange={(e) => setBody(e.target.value)}
+        onPaste={(e) => {
+          const files = pastedFiles([...e.clipboardData.items]);
+          if (files.length > 0 && canAttach) {
+            e.preventDefault();
+            void attach(files);
+          }
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim() && !busy) void send();
         }}
@@ -301,6 +329,24 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
             ))}
           </select>
         )}
+        {canAttach && (
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              hidden
+              multiple
+              accept="image/png,image/jpeg,image/gif,application/pdf,text/plain,.log,.txt"
+              onChange={(e) => {
+                void attach([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
+            />
+            <button className="btn btn-quiet" disabled={uploading > 0} onClick={() => fileInput.current?.click()} title="Files are attached as internal notes. You can also paste a screenshot.">
+              {uploading > 0 ? "Attaching…" : "Attach file"}
+            </button>
+          </>
+        )}
         <span className="muted">
           {kind === "outbound" ? "Leaves the organisation through the ticket's channel." : "Never leaves the service desk."} Ctrl+Enter to send.
         </span>
@@ -312,7 +358,12 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
   );
 }
 
-function Thread({ messages }: { messages: Message[] }) {
+function Thread({ ticketId, messages }: { ticketId: number; messages: Message[] }) {
+  const { api, can } = useApp();
+  const fetchFile = useCallback(
+    (file: AttachmentInfo) => api.blob(`/tickets/${ticketId}/attachments/${file.id}`),
+    [api, ticketId],
+  );
   return (
     <ol className="thread">
       {messages.map((m) => (
@@ -331,6 +382,7 @@ function Thread({ messages }: { messages: Message[] }) {
             </header>
             {/* Plain text only; React escapes it. */}
             <p className="msg-body">{m.body}</p>
+            <FileList files={m.attachments ?? []} fetchFile={fetchFile} canOpen={can("ticket:read_pii")} />
           </div>
         </li>
       ))}
@@ -410,7 +462,7 @@ export function TicketPage({ id }: { id: number }) {
         ) : !messages.data ? (
           <Spinner />
         ) : (
-          <Thread messages={messages.data} />
+          <Thread ticketId={t.id} messages={messages.data} />
         )}
         {!t.merged_into_id && (
           <Composer

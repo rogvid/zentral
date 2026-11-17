@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { FileList } from "../components/Files";
 import { TeaCup, Wordmark, firstName } from "../brand";
-import { relativeTime } from "../lib";
+import { pastedFiles, relativeTime } from "../lib";
+import type { AttachmentInfo } from "../types";
 import { Empty, ErrorState, Field, Spinner } from "../ui";
-import { portal, PortalError, type Profile, type Request, type RequestDetail } from "./api";
+import { portal, PortalError, portalFile, portalUpload, type Profile, type Request, type RequestDetail } from "./api";
+
+const ACCEPT = "image/png,image/jpeg,image/gif,application/pdf,text/plain,.log,.txt";
 
 // What a status means to the person waiting, not to the desk.
 const STATUS: Record<Request["status"], string> = {
@@ -166,12 +170,28 @@ function RequestView({ id }: { id: number }) {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const fetchFile = useCallback((file: AttachmentInfo) => portalFile(id, file.id), [id]);
   const load = useCallback(() => {
     portal<RequestDetail>("GET", `/tickets/${id}`).then(setDetail, (e: unknown) =>
       setError(e instanceof PortalError && e.status === 404 ? "We could not find this request." : "Could not load the request."),
     );
   }, [id]);
   useEffect(load, [load]);
+
+  async function sendFiles(files: File[]) {
+    if (files.length === 0) return;
+    setBusy(true);
+    try {
+      for (const file of files) await portalUpload(id, file);
+      setNotice("File sent. It can be opened once it has been checked for malware.");
+      load();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Could not send the file");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function send() {
     setBusy(true);
@@ -216,6 +236,7 @@ function RequestView({ id }: { id: number }) {
                 </time>
               </header>
               <p className="msg-body">{m.body}</p>
+              <FileList files={m.attachments} fetchFile={fetchFile} canOpen />
             </div>
           </li>
         ))}
@@ -224,8 +245,36 @@ function RequestView({ id }: { id: number }) {
       {t.rating && <p className="success-banner">Thank you — you rated this {t.rating} out of 5.</p>}
       {t.can_reply ? (
         <div className="composer composer-outbound">
-          <textarea rows={4} maxLength={100000} value={reply} aria-label="Your message" placeholder="Add information or answer a question…" onChange={(e) => setReply(e.target.value)} />
+          <textarea
+            rows={4}
+            maxLength={100000}
+            value={reply}
+            aria-label="Your message"
+            placeholder="Add information or answer a question… You can paste a screenshot here."
+            onChange={(e) => setReply(e.target.value)}
+            onPaste={(e) => {
+              const files = pastedFiles([...e.clipboardData.items]);
+              if (files.length > 0) {
+                e.preventDefault();
+                void sendFiles(files);
+              }
+            }}
+          />
           <div className="composer-foot">
+            <input
+              ref={fileInput}
+              type="file"
+              hidden
+              multiple
+              accept={ACCEPT}
+              onChange={(e) => {
+                void sendFiles([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
+            />
+            <button className="btn btn-quiet" disabled={busy} onClick={() => fileInput.current?.click()}>
+              Add a file
+            </button>
             <span className="muted">{notice ?? (t.status === "resolved" ? "Writing again reopens the request." : "")}</span>
             <button className="btn btn-primary" disabled={busy || !reply.trim()} onClick={() => void send()}>
               Send
@@ -258,6 +307,9 @@ function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
         body: String(data.get("body") ?? ""),
         system_id: String(data.get("system") ?? "") || null,
       });
+      for (const file of data.getAll("files")) {
+        if (file instanceof File && file.size > 0) await portalUpload(created.id, file).catch(() => undefined);
+      }
       onCreated(created.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the request");
@@ -290,6 +342,9 @@ function NewRequest({ onCreated }: { onCreated: (id: number) => void }) {
         )}
         <Field label="Describe the problem">
           <textarea name="body" required rows={6} maxLength={100000} />
+        </Field>
+        <Field label="Screenshots or files (optional)" hint="Images, PDF or text files. Each is checked for malware before the service desk opens it.">
+          <input name="files" type="file" multiple accept={ACCEPT} />
         </Field>
         {error && <p className="danger-banner">{error}</p>}
         <div>

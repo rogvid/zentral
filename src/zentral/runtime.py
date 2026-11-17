@@ -17,6 +17,7 @@ from zentral.db.models import IngestSource
 from zentral.db.session import SessionFactory, create_engine, create_session_factory
 from zentral.security import crypto
 from zentral.security.principal import Principal, system_principal
+from zentral.security.scanner import Scanner, build_scanner
 from zentral.services.context import Ctx
 
 
@@ -29,6 +30,7 @@ class Runtime:
     registry: ConnectorRegistry
     http: httpx.AsyncClient
     ai: AIProvider
+    scanner: Scanner
 
     def system_ctx(self, session, component: str, channel: str = "worker") -> Ctx:  # type: ignore[no-untyped-def]
         principal: Principal = system_principal(component)
@@ -88,4 +90,5 @@ def build_runtime(
         registry=ConnectorRegistry.load(settings),
         http=http,
         ai=ai or load_provider(settings, http),
+        scanner=build_scanner(settings),
     )

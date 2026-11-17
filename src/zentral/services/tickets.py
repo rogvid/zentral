@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true, update
 
 from zentral.db.models import (
+    Attachment,
     AuditEvent,
     Contact,
     DeliveryStatus,
@@ -330,6 +331,17 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
         )
     ).all()
     names = await _user_names(ctx, {m.author_user_id for m in messages if m.author_user_id})
+    from zentral.services import attachments as files
+
+    by_message: dict[uuid.UUID | None, list[Any]] = {}
+    for a in (
+        await ctx.session.scalars(
+            select(Attachment)
+            .where(Attachment.ticket_id == ticket.id)
+            .order_by(Attachment.created_at)
+        )
+    ).all():
+        by_message.setdefault(a.message_id, []).append(files.out(ctx, a))
     out: list[MessageOut] = []
     for m in messages:
         if m.author_contact_id is not None:
@@ -349,6 +361,7 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
                 author_type=author_type,
                 delivery_status=m.delivery_status,
                 created_at=m.created_at,
+                attachments=by_message.get(m.id, []),
             )
         )
     ctx.audit("ticket.messages.read", "ticket", ticket.id, count=len(out), pii=pii)
@@ -372,6 +385,9 @@ ACTIVITY_ACTIONS = (
     "ticket.classification_skipped",
     "ticket.escalated",
     "ticket.rated",
+    "attachment.added",
+    "attachment.cleared",
+    "attachment.blocked",
     "message.delivered",
     "message.delivery_failed",
 )
@@ -679,6 +695,9 @@ async def merge_ticket(ctx: Ctx, source_id: int, target_id: int) -> TicketOut:
     moved = await ctx.session.execute(
         update(Message).where(Message.ticket_id == source.id).values(ticket_id=target.id)
     )
+    from zentral.services import attachments as files
+
+    await files.move(ctx, source.id, target.id)
     count = int(getattr(moved, "rowcount", 0) or 0)
     source_key, target_key = ticket_key(ctx, source.id), ticket_key(ctx, target.id)
     ctx.session.add(

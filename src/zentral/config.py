@@ -108,6 +108,14 @@ class Settings(BaseSettings):
             "low": "business",
         }
     )
+    # Attachments (screenshots, logs, PDFs). Off until a malware scanner is in place.
+    attachments_enabled: bool = False
+    attachment_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=25 * 1024 * 1024)
+    attachments_per_ticket: int = Field(default=20, ge=1, le=100)
+    # "clamav": scan with clamd before anyone can open a file. "none": development only.
+    attachment_scanner: Literal["clamav", "none"] = "clamav"
+    clamav_host: str = "clamav"
+    clamav_port: int = Field(default=3310, ge=1, le=65535)
     # Requester portal: people sign in with a one-time e-mail link to follow their
     # requests, reply and rate the help they got. Links and replies to tickets
     # opened in the portal go out through this mail channel (its name).
@@ -299,6 +307,8 @@ class Settings(BaseSettings):
             if any(hours <= 0 for hours in targets.values()):
                 problems.append(f"ZENTRAL_{name.upper()}: hours must be positive")
         problems.extend(self._calendar_problems())
+        if self.is_production and self.attachments_enabled and self.attachment_scanner == "none":
+            problems.append("attachments in production need ZENTRAL_ATTACHMENT_SCANNER=clamav")
         if self.portal_enabled and not self.portal_mail_channel:
             problems.append("ZENTRAL_PORTAL_ENABLED needs ZENTRAL_PORTAL_MAIL_CHANNEL")
         if self.audit_keep_days and not self.audit_archive_dir:

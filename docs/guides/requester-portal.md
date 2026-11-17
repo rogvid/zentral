@@ -57,6 +57,7 @@ the same proof e-mail threading already relies on.
 | See their own requests and where they stand | See anyone else's requests — another person's ticket is "not found" |
 | Read their messages and the desk's replies | See internal notes, AI output, routing, priorities or staff names (replies show as "Service desk") |
 | Reply; a reply to a resolved request reopens it | Reopen a closed request (they start a new one) |
+| Send screenshots and files (paste or pick), see the ones they sent | See files the desk attached (internal) |
 | Open a new request, optionally naming the system | Set priority, team or anything else the desk decides |
 | Rate a resolved request once, within 30 days, 1–5 with an optional comment | Change a rating |
 

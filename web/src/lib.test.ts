@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelName, fillTemplate, formatTargets, parseTargets, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
+import { channelName, fileSize, fillTemplate, formatTargets, parseTargets, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
 
 describe("parseRoute", () => {
   it("parses known routes", () => {
@@ -142,5 +142,13 @@ describe("targets text", () => {
   });
   it("rejects nonsense", () => {
     for (const bad of ["critical=1", "high=0", "high=-1", "high", "high=1x", "high=9000"]) expect(parseTargets(bad)).toBeNull();
+  });
+});
+
+describe("fileSize", () => {
+  it("reads naturally", () => {
+    expect(fileSize(512)).toBe("512 B");
+    expect(fileSize(820 * 1024)).toBe("820 KB");
+    expect(fileSize(1.4 * 1024 * 1024)).toBe("1.4 MB");
   });
 });

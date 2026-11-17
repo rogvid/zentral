@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from zentral.api.deps import CtxDep
-from zentral.db.models import TicketPriority, TicketStatus
+from zentral.db.models import Attachment, TicketPriority, TicketStatus
 from zentral.schemas import (
     ActivityOut,
+    AttachmentOut,
     Email,
     InsightsOut,
     MergeIn,
@@ -19,7 +21,8 @@ from zentral.schemas import (
     TicketPage,
     TicketUpdate,
 )
-from zentral.services import insights, tickets
+from zentral.services import attachments, insights, tickets
+from zentral.services.context import Ctx
 from zentral.services.tickets import TicketFilter
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -122,3 +125,60 @@ async def add_message(ctx: CtxDep, ticket_id: int, data: MessageCreate) -> Messa
     message = await tickets.add_message(ctx, ticket_id, data)
     await ctx.commit()
     return message
+
+
+# --- attachments --------------------------------------------------------------------
+
+
+async def read_upload(request: Request, ctx: Ctx) -> bytes:
+    """The raw request body, bounded by the attachment size limit."""
+    limit = ctx.settings.attachment_max_bytes
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > limit:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file too large")
+    return bytes(data)
+
+
+def file_response(attachment: Attachment, data: bytes) -> Response:
+    """Always a download, never rendered by the browser as a page."""
+    ascii_name = attachment.filename.encode("ascii", "replace").decode().replace('"', "_")
+    return Response(
+        content=data,
+        media_type=attachment.content_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quote(attachment.filename)}"
+            ),
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cross-Origin-Resource-Policy": "same-origin",
+        },
+    )
+
+
+@router.post("/{ticket_id}/attachments", status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    request: Request,
+    ctx: CtxDep,
+    ticket_id: int,
+    filename: Annotated[str, Query(min_length=1, max_length=200)],
+) -> AttachmentOut:
+    """Attach a file (the request body). It is scanned before anyone can open it."""
+    data = await read_upload(request, ctx)
+    out = await attachments.upload(ctx, ticket_id, filename, data)
+    await ctx.commit()
+    return out
+
+
+@router.get("/{ticket_id}/attachments")
+async def list_attachments(ctx: CtxDep, ticket_id: int) -> list[AttachmentOut]:
+    return await attachments.list_for_ticket(ctx, ticket_id)
+
+
+@router.get("/{ticket_id}/attachments/{attachment_id}")
+async def download_attachment(ctx: CtxDep, ticket_id: int, attachment_id: uuid.UUID) -> Response:
+    attachment, data = await attachments.download(ctx, ticket_id, attachment_id)
+    await ctx.commit()
+    return file_response(attachment, data)

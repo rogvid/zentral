@@ -16,7 +16,7 @@ def content_security_policy(connect_origins: list[str]) -> str:
     origin plus the identity provider's (needed for the browser sign-in flow)."""
     connect = " ".join(["'self'", *connect_origins])
     return (
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
         f"font-src 'self'; connect-src {connect}; frame-src 'none'; frame-ancestors 'none'; "
         "base-uri 'self'; form-action 'self'; object-src 'none'"
     )
@@ -28,10 +28,18 @@ class _BodyTooLarge(Exception):
 
 class HardeningMiddleware:
     def __init__(
-        self, app: ASGIApp, *, max_body_bytes: int, hsts: bool, connect_origins: list[str]
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        hsts: bool,
+        connect_origins: list[str],
+        upload_body_bytes: int = 0,
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        # File uploads and webhooks carrying files may be larger (bounded again per route).
+        self.upload_body_bytes = max(upload_body_bytes, max_body_bytes)
         self.headers: list[tuple[bytes, bytes]] = [
             (b"x-content-type-options", b"nosniff"),
             (b"x-frame-options", b"DENY"),
@@ -61,17 +69,20 @@ class HardeningMiddleware:
         path: str = scope["path"]
         is_api = path.startswith(("/api/", "/mcp"))
 
-        declared = dict(scope["headers"]).get(b"content-length")
-        too_large = (
-            declared is not None and declared.isdigit() and int(declared) > self.max_body_bytes
+        limit = (
+            self.upload_body_bytes
+            if path.endswith("/attachments") or path.startswith("/api/v1/hooks/")
+            else self.max_body_bytes
         )
+        declared = dict(scope["headers"]).get(b"content-length")
+        too_large = declared is not None and declared.isdigit() and int(declared) > limit
 
         async def limited_receive() -> Message:
             nonlocal received
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_body_bytes:
+                if received > limit:
                     raise _BodyTooLarge
             return message
 

@@ -46,6 +46,15 @@ class FieldCipher:
         except InvalidToken as exc:
             raise CryptoError("ciphertext could not be decrypted with any configured key") from exc
 
+    def encrypt_bytes(self, data: bytes) -> str:
+        return self._fernet.encrypt(data).decode("ascii")
+
+    def decrypt_bytes(self, token: str) -> bytes:
+        try:
+            return self._fernet.decrypt(token.encode("ascii"))
+        except InvalidToken as exc:
+            raise CryptoError("ciphertext could not be decrypted with any configured key") from exc
+
     def rotate(self, token: str) -> str:
         """Re-encrypt ``token`` under the current primary key."""
         return self._fernet.rotate(token.encode("ascii")).decode("ascii")

@@ -56,6 +56,7 @@ test dumps the whole trail and asserts this. Example:
 | Area | Actions |
 |---|---|
 | Tickets | `ticket.created`, `ticket.ingested`, `ticket.message_received`, `ticket.read`, `ticket.list`, `ticket.messages.read`, `ticket.updated`, `ticket.note_added`, `ticket.replied`, `ticket.acknowledged`, `ticket.auto_closed`, `ticket.merged`, `ticket.merge_received`, `ticket.escalated`, `ticket.rated` |
+| Files | `attachment.added`, `attachment.cleared`, `attachment.blocked`, `attachment.dropped`, `attachment.downloaded` (type and size only — never the file name) |
 | Portal | `portal.link_requested`, `portal.link_sent`, `portal.signed_in`, `portal.signed_out`, `portal.tickets_listed`, `portal.ticket_read` (actor `contact:<id>`, channel `portal`) |
 | Delivery | `message.delivered`, `message.delivery_failed` |
 | AI | `ticket.classified`, `ticket.classification_skipped`, `automation.rule_applied` |

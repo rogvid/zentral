@@ -65,6 +65,23 @@ async function as(browser, persona, steps, viewport = { width: 1380, height: 900
   await context.close();
 }
 
+// A 2×2 PNG, as a screenshot stand-in.
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** Reload until the malware check has cleared the newest file and its preview shows. */
+async function waitForPreview(page) {
+  for (let i = 0; i < 20; i++) {
+    if ((await page.locator(".file-thumb img").count()) > 0) return;
+    await page.waitForTimeout(500);
+    await page.reload();
+    await page.locator(".thread .msg").first().waitFor();
+  }
+  throw new Error("file preview never appeared");
+}
+
 const go = (page, hash) => page.goto(`${BASE}/#/${hash}`);
 const themeButton = (page) => page.getByRole("button", { name: /Switch theme/ });
 
@@ -148,6 +165,14 @@ await as(browser, "agent", async (page) => {
   await page.getByRole("dialog").getByRole("button", { name: "Merge" }).click();
   await page.locator(".ticket-key", { hasText: signInKey }).waitFor();
   await page.locator(".thread .msg-body", { hasText: "was merged into this ticket" }).waitFor();
+
+  // A screenshot: attached, scanned, then previewed.
+  await page.locator('.composer input[type="file"]').setInputFiles({ name: "error-dialog.png", mimeType: "image/png", buffer: PNG });
+  await page.locator(".thread .msg-body", { hasText: "Attached error-dialog.png." }).waitFor();
+  await waitForPreview(page);
+  await page.getByRole("button", { name: "View error-dialog.png" }).click();
+  await page.getByRole("dialog").locator("img.file-full").waitFor();
+  await page.keyboard.press("Escape");
 
   // Role boundaries are visible in the UI…
   await go(page, "admin");
@@ -307,6 +332,9 @@ await as(
     await page.getByRole("button", { name: "Send", exact: true }).click();
     await page.getByText("Sent. The service desk has been told.").waitFor();
     await page.locator(".thread .msg-body", { hasText: "dropped twice again" }).waitFor();
+    await page.locator('.composer input[type="file"]').setInputFiles({ name: "vpn-error.png", mimeType: "image/png", buffer: PNG });
+    await page.locator(".thread .msg-body", { hasText: "Sent vpn-error.png." }).waitFor();
+    await waitForPreview(page);
     await shot(page, "portal-request");
 
     await page.getByRole("link", { name: "← Your requests" }).click();

@@ -49,6 +49,9 @@ applied.
 - **Activity** shows what happened to the ticket and who did it — changes,
   notes, replies, AI triage. It does not show who merely looked.
 
+- **Files and screenshots**: images show a preview under their message.
+  *Attach file*, or paste a screenshot into the composer; such files are
+  internal notes. Details in [Attachments](attachments.md).
 - **Saved replies**: pick one from *Saved replies…* under the composer. It is
   filled in with the requester's first name, the ticket key and your name, and
   you can edit it before sending — nothing is sent until you press send.

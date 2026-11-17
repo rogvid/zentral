@@ -44,6 +44,34 @@ export class Api {
     return payload as T;
   }
 
+  /** Send a file as the raw request body. */
+  async upload<T>(path: string, file: Blob): Promise<T> {
+    const response = await fetch(`/api/v1${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${await this.session.getToken()}`, "Content-Type": "application/octet-stream" },
+      body: file,
+      credentials: "omit",
+      cache: "no-store",
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new ApiError(response.status, describe(response.status, payload));
+    return payload as T;
+  }
+
+  /** Fetch a file; the caller turns it into an object URL. */
+  async blob(path: string): Promise<Blob> {
+    const response = await fetch(`/api/v1${path}`, {
+      headers: { Authorization: `Bearer ${await this.session.getToken()}` },
+      credentials: "omit",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      throw new ApiError(response.status, describe(response.status, payload));
+    }
+    return response.blob();
+  }
+
   get<T>(path: string): Promise<T> {
     return this.request<T>("GET", path);
   }

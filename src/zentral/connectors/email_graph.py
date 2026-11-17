@@ -473,7 +473,11 @@ class GraphMailConnector(Connector):
             f"{self._user_url(cfg.mailbox)}/sendMail",
             json={
                 "message": {
-                    "subject": f"[{message.ticket_key}] {message.subject}",
+                    "subject": (
+                        f"[{message.ticket_key}] {message.subject}"
+                        if message.ticket_key
+                        else message.subject
+                    ),
                     "body": {"contentType": "Text", "content": message.body},
                     "toRecipients": [{"emailAddress": {"address": message.recipient_email}}],
                 },

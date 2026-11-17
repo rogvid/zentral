@@ -19,7 +19,7 @@ from zentral import __version__
 from zentral.api.deps import request_meta
 from zentral.api.middleware import HardeningMiddleware, McpPathMiddleware
 from zentral.api.ratelimit import RateLimiter
-from zentral.api.routes import admin, compliance, hooks, meta, notifications, tickets
+from zentral.api.routes import admin, compliance, hooks, meta, notifications, portal, tickets
 from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
 from zentral.logging import configure_logging
@@ -104,6 +104,7 @@ def create_app(
         admin.router,
         compliance.router,
         hooks.router,
+        portal.router,
     ):
         app.include_router(router, prefix="/api/v1")
 
@@ -175,6 +176,11 @@ def create_app(
             # Path traversal guard: only files inside the static root are served.
             if path and candidate.is_file() and candidate.is_relative_to(root):
                 return FileResponse(candidate)
+            if (path == "portal" or path.startswith("portal/")) and (
+                root / "portal.html"
+            ).is_file():
+                # The requester portal is its own small page, without staff sign-in.
+                return FileResponse(root / "portal.html", headers={"Cache-Control": "no-cache"})
             return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app

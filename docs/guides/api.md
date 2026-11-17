@@ -71,6 +71,12 @@ A ticket response includes `pii_redacted: true` when your role does not include
 `ticket:read_pii`; subject and bodies are then masked and `requester.email` is
 `null`.
 
+## Requester portal
+
+`/api/v1/portal/*` is a separate, much smaller API for requesters, with its own
+cookie session — see [Requester portal](requester-portal.md). Staff tokens are
+not accepted there.
+
 ## Reference data and administration
 
 ```http

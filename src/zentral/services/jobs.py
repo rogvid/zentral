@@ -41,7 +41,7 @@ from zentral.db.models import (
 )
 from zentral.runtime import Runtime
 from zentral.security.principal import Principal
-from zentral.services import notifications, privacy
+from zentral.services import notifications, portal, privacy
 from zentral.services.context import Ctx
 from zentral.services.ingest import ingest
 from zentral.services.tickets import auto_close, ticket_key
@@ -65,6 +65,7 @@ class Worker:
             "retention_sweep": self._retention,
             "escalation_sweep": self._escalate,
             "audit_archive": self._audit_archive,
+            "send_portal_link": self._send_portal_link,
         }
 
     # -- queue mechanics -------------------------------------------------------------
@@ -257,6 +258,7 @@ class Worker:
         while await privacy.retention_sweep(ctx):
             await ctx.commit()
         await notifications.purge(ctx)
+        await portal.purge_tokens(ctx)
 
     async def _escalate(self, ctx: Ctx, payload: dict[str, object]) -> None:
         """Warn about targets at risk, escalate missed ones."""
@@ -271,6 +273,13 @@ class Worker:
         await run_audit_housekeeping(
             ctx.session, self.rt.trail, directory, settings.audit_keep_days, ctx.principal
         )
+
+    async def _send_portal_link(self, ctx: Ctx, payload: dict[str, object]) -> None:
+        source = await portal.portal_source(ctx)
+        connector = self.rt.connector_for(source) if source else None
+        if connector is None or Capability.SEND not in connector.capabilities:
+            raise ConnectorRejected("the portal's mail channel is missing or cannot send")
+        await portal.send_link(ctx, uuid.UUID(str(payload["contact_id"])), connector.send)
 
     async def _poll(self, ctx: Ctx, payload: dict[str, object]) -> None:
         source = await ctx.session.get(IngestSource, uuid.UUID(str(payload["source_id"])))

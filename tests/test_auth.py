@@ -118,6 +118,8 @@ async def test_every_api_route_requires_authentication(client):
     for path, methods in spec["paths"].items():
         if path in public or not path.startswith("/api/"):
             continue
+        if path.startswith("/api/v1/portal/"):
+            continue  # requester sessions, not staff tokens: see test_portal.py
         for method in methods:
             url = path.replace("{ticket_id}", "1")
             for name in ("team_id", "source_id", "rule_id", "contact_id"):

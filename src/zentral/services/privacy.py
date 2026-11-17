@@ -16,9 +16,17 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
-from zentral.db.models import Contact, Message, Ticket, TicketStatus, utcnow
+from zentral.db.models import (
+    Contact,
+    Message,
+    PortalToken,
+    Rating,
+    Ticket,
+    TicketStatus,
+    utcnow,
+)
 from zentral.schemas import ContactOut, ErasureOut
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
@@ -143,6 +151,9 @@ async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:
         .where(Message.ticket_id == ticket.id)
         .values(body=ERASED, author_contact_id=None, external_id=None)
     )
+    await ctx.session.execute(
+        update(Rating).where(Rating.ticket_id == ticket.id).values(comment=None)
+    )
     ticket.subject = ERASED
     ticket.ai_summary = None
     ticket.requester_id = None
@@ -181,6 +192,8 @@ async def erase_contact(ctx: Ctx, contact_id: uuid.UUID) -> ErasureOut:
     contact.display_name = None
     contact.identity_hash = None
     contact.erased_at = utcnow()
+    # Signed-in portal sessions and unused links end with the identity.
+    await ctx.session.execute(delete(PortalToken).where(PortalToken.contact_id == contact.id))
     ctx.audit("privacy.erased", "contact", contact.id, tickets=len(tickets), messages=messages)
     return ErasureOut(
         contact_id=contact.id, tickets_scrubbed=len(tickets), messages_scrubbed=messages
@@ -222,5 +235,8 @@ async def retention_sweep(ctx: Ctx, *, batch: int = 200) -> int:
                 contact.display_name = None
                 contact.identity_hash = None
                 contact.erased_at = utcnow()
+                await ctx.session.execute(
+                    delete(PortalToken).where(PortalToken.contact_id == contact.id)
+                )
                 ctx.audit("retention.contact_erased", "contact", contact.id)
     return len(tickets)

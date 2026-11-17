@@ -34,7 +34,7 @@ async function shot(page, name) {
   await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
-async function as(browser, persona, steps, viewport = { width: 1380, height: 900 }) {
+async function as(browser, persona, steps, viewport = { width: 1380, height: 900 }, staff = true) {
   const context = await browser.newContext({ viewport, colorScheme: "light" });
   const page = await context.newPage();
   page.on("pageerror", (e) => problems.push(`[${persona}] page error: ${e.message}`));
@@ -51,9 +51,11 @@ async function as(browser, persona, steps, viewport = { width: 1380, height: 900
     if (index >= 0) expectedErrors.splice(index, 1);
     else problems.push(`[${persona}] HTTP ${r.status()} ${r.url()}`);
   });
-  await page.goto(`${BASE}/`);
-  await page.getByRole("link", { name: new RegExp(`\\(${persona}\\)`) }).click();
-  await page.waitForSelector(".sidebar");
+  if (staff) {
+    await page.goto(`${BASE}/`);
+    await page.getByRole("link", { name: new RegExp(`\\(${persona}\\)`) }).click();
+    await page.waitForSelector(".sidebar");
+  }
   try {
     await steps(page);
   } catch (e) {
@@ -279,6 +281,47 @@ await as(browser, "automation", async (page) => {
   check((await page.getByRole("tab", { name: "Reply to requester" }).count()) === 0, "masked role offered a reply box");
   await shot(page, "agent-view-masked");
 });
+
+// --- requester: the portal, signed in with a one-time link ----------------------------------------
+await as(
+  browser,
+  "requester",
+  async (page) => {
+    const link = process.env.PORTAL_LINK ?? "";
+    check(link.includes("/portal#token="), "portal link was minted");
+    expectError(401, "/api/v1/portal/me");
+    await page.goto(`${BASE}/portal`);
+    await page.getByRole("heading", { name: "Follow your requests" }).waitFor();
+    await page.getByLabel("Your e-mail address").fill("someone.unknown@example.com");
+    await page.getByRole("button", { name: "Send me a link" }).click();
+    await page.getByText("If this address has contacted the service desk").waitFor();
+    await shot(page, "portal-sign-in");
+
+    await page.goto(link);
+    await page.getByRole("heading", { name: "Your requests" }).waitFor();
+    check(!page.url().includes("token"), "the one-time token stayed in the address bar");
+    await page.getByText("VPN keeps disconnecting").click();
+    await page.locator(".thread .msg").first().waitFor();
+    check((await page.locator(".msg-note").count()) === 0, "portal shows internal notes");
+    await page.getByLabel("Your message").fill("It dropped twice again this morning.");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await page.getByText("Sent. The service desk has been told.").waitFor();
+    await page.locator(".thread .msg-body", { hasText: "dropped twice again" }).waitFor();
+    await shot(page, "portal-request");
+
+    await page.getByRole("link", { name: "← Your requests" }).click();
+    await page.getByRole("link", { name: "New request" }).click();
+    await page.getByLabel("What is it about?").fill("Second monitor flickers");
+    await page.getByLabel("Describe the problem").fill("The left monitor flickers when the laptop is docked.");
+    await page.getByRole("button", { name: "Send request" }).click();
+    await page.getByRole("heading", { name: "Second monitor flickers" }).waitFor();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("heading", { name: "Follow your requests" }).waitFor();
+  },
+  { width: 1180, height: 820 },
+  false,
+);
 
 // --- privacy officer: access and erasure ---------------------------------------------------------
 await as(browser, "privacy", async (page) => {

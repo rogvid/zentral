@@ -59,6 +59,10 @@ in the working directory is read too). Generate a starting point with
     ticket on Friday evening is due Friday evening; a normal one waits for
     Monday morning.
 
+`ZENTRAL_PORTAL_ENABLED`, `ZENTRAL_PORTAL_MAIL_CHANNEL`
+:   The [requester portal](../guides/requester-portal.md), and the mail channel
+    (by name) that sends its sign-in links.
+
 `ZENTRAL_AUDIT_ARCHIVE_DIR`, `ZENTRAL_AUDIT_KEEP_DAYS`
 :   Daily signed archives of the audit trail, and how long events stay in the
     database as well. See [Archive and prune](../runbooks/audit-verification.md#archive-and-prune-keep-the-database-lean).
@@ -138,6 +142,11 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_TIMEZONE` | `UTC` | str |
 | `ZENTRAL_HOLIDAYS` | *(empty)* | list[str] |
 | `ZENTRAL_SLA_CALENDAR` | `{'urgent': '24x7', 'high': 'business', 'normal': 'business', 'low': 'business'}` | dict[str, str] |
+| `ZENTRAL_PORTAL_ENABLED` | `False` | bool |
+| `ZENTRAL_PORTAL_MAIL_CHANNEL` | *(empty)* | str |
+| `ZENTRAL_PORTAL_LINK_MINUTES` | `15` | int |
+| `ZENTRAL_PORTAL_SESSION_HOURS` | `8` | int |
+| `ZENTRAL_PORTAL_LINKS_PER_HOUR` | `3` | int |
 | `ZENTRAL_AUDIT_ARCHIVE_DIR` | *(empty)* | str |
 | `ZENTRAL_AUDIT_KEEP_DAYS` | `0` | int |
 | `ZENTRAL_ESCALATION_WARN_FRACTION` | `0.25` | float |

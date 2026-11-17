@@ -28,6 +28,7 @@ const ACTIVITY_TEXT: Record<string, string> = {
   "ticket.merged": "merged this ticket into another",
   "ticket.merge_received": "merged a duplicate into this ticket",
   "ticket.classification_skipped": "AI triage skipped — the requester objected",
+  "ticket.rated": "The requester rated the help in the portal",
   "message.delivered": "Reply delivered",
   "message.delivery_failed": "Reply could not be delivered",
 };
@@ -507,6 +508,13 @@ export function TicketPage({ id }: { id: number }) {
             </div>
           ) : (
             <span className="muted">Internal ticket</span>
+          )}
+          {t.rating_score !== null && (
+            <div className="ticket-rating">
+              <span className="field-label">Their rating</span>
+              <strong>{t.rating_score} / 5</strong>
+              {t.rating_comment && <p className="msg-body">“{t.rating_comment}”</p>}
+            </div>
           )}
         </div>
 

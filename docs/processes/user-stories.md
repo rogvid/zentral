@@ -16,9 +16,9 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | my reply to land on the same ticket | I don't have to explain twice | Threading |
 | ✓ | a resolved issue to reopen if I say it isn't fixed | I'm not sent back to the start | 7-day grace period |
 | ✓ | to see and get my data, or have it deleted | my rights are respected | [Data-subject requests](data.md#requests) |
-| ◻ | a self-service page listing my open requests | I can check progress without writing | Not yet: needs a requester sign-in design |
+| ✓ **new** | a self-service page listing my requests, where I can answer and open new ones | I can check progress without writing an e-mail | [Requester portal](../guides/requester-portal.md) |
 | ◻ | to send a screenshot or log file | the desk sees what I see | Not yet: attachments need malware scanning and storage design |
-| ◻ | to rate the help I got | the desk learns | Not yet |
+| ✓ **new** | to rate the help I got | the desk learns | Rating in the portal; *Requester satisfaction* in Insights |
 
 ## Agent
 

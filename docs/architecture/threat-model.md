@@ -40,6 +40,10 @@ beyond their role, any AI model's output.
 | Guess or steal a webhook token | 256-bit random, stored hashed, constant-time comparison, rate limit, rotation endpoint | Token leaked by the sending system — scope is one channel, create-only |
 | Forge a Teams/Slack request | HMAC verification; Slack timestamp window; de-duplication by event ID | Secret leaked by the platform admin |
 | Spoof an e-mail sender | Out of Zentral's control: rely on SPF/DKIM/DMARC enforcement in Exchange. Threading requires sender = requester | A spoofed sender can open tickets and append to their "own" |
+| Find out whether someone is a requester (portal) | Same answer for every address; links created and sent by the worker, not in the request; attempts audited without the address | — |
+| Steal or replay a portal link | Single use, 15 minutes, only the hash stored, kept out of server logs and history (URL fragment, removed on arrival), rate-limited per address | Someone who can read the requester's mailbox — the same exposure as e-mail itself |
+| Hijack or forge portal requests (CSRF, XSS) | HttpOnly SameSite=Strict cookie scoped to the portal API; mandatory custom header; strict CSP; server-side sessions revoked on sign-out and erasure | Browser zero-day |
+| Use a portal session to reach staff data | Requesters hold no permission; every portal call checks ticket ownership; notes, AI output and staff names are never in portal responses; staff tokens and portal cookies are not interchangeable | — |
 | XSS via ticket content | Text-only storage and rendering; strict CSP | Browser zero-day |
 | Enumerate tickets or channels | Uniform `404`/`401`; server-side scope filter | — |
 | Denial of service | Size limits, rate limits, bounded queries, linear-time text matching, throttling of repeated bad tokens | Volumetric attacks: needs an upstream WAF/CDN |
@@ -83,7 +87,5 @@ Stated plainly so nobody assumes otherwise:
 - **No built-in WAF, DDoS protection or intrusion detection.**
 - **Key custody** is environment-variable based; there is no HSM/KMS envelope
   encryption yet.
-- **Audit retention**: the trail grows without bound; archiving is a manual
-  [runbook](../runbooks/audit-verification.md).
 - **Masking is pattern-based**, not anonymisation.
 - **No independent penetration test or certification** has been performed.

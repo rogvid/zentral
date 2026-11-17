@@ -39,6 +39,7 @@ const CONNECTOR_NAMES: Record<string, string> = {
   slack: "Slack",
   manual: "Created by hand",
   mcp: "AI agent",
+  portal: "Requester portal",
 };
 
 /** The human name for a channel type ("email_graph" → "Microsoft 365 mail"). */

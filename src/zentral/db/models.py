@@ -282,6 +282,35 @@ class Notification(Base):
     __table_args__ = (Index("ix_notifications_user", "user_id", "created_at"),)
 
 
+class PortalToken(Base):
+    """A requester's sign-in link or portal session. Only a hash is stored."""
+
+    __tablename__ = "portal_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    contact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(8))  # link | session
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Rating(Base):
+    """How the requester rated the help they got (one per ticket)."""
+
+    __tablename__ = "ratings"
+
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    score: Mapped[int] = mapped_column(Integer)  # 1 (poor) … 5 (excellent)
+    comment: Mapped[str | None] = mapped_column(EncryptedText)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class ReplyTemplate(Base):
     """A saved reply agents can start from. Global, or limited to one team."""
 

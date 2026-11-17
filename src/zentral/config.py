@@ -108,6 +108,15 @@ class Settings(BaseSettings):
             "low": "business",
         }
     )
+    # Requester portal: people sign in with a one-time e-mail link to follow their
+    # requests, reply and rate the help they got. Links and replies to tickets
+    # opened in the portal go out through this mail channel (its name).
+    portal_enabled: bool = False
+    portal_mail_channel: str = ""
+    portal_link_minutes: int = Field(default=15, ge=5, le=60)
+    portal_session_hours: int = Field(default=8, ge=1, le=72)
+    # Sign-in links per e-mail address per hour (beyond that, requests are ignored).
+    portal_links_per_hour: int = Field(default=3, ge=1, le=20)
     # Audit archiving: a directory (ideally on write-once storage) the worker writes a
     # signed archive of the previous day's audit events to every day. Empty = off.
     audit_archive_dir: str = ""
@@ -290,6 +299,8 @@ class Settings(BaseSettings):
             if any(hours <= 0 for hours in targets.values()):
                 problems.append(f"ZENTRAL_{name.upper()}: hours must be positive")
         problems.extend(self._calendar_problems())
+        if self.portal_enabled and not self.portal_mail_channel:
+            problems.append("ZENTRAL_PORTAL_ENABLED needs ZENTRAL_PORTAL_MAIL_CHANNEL")
         if self.audit_keep_days and not self.audit_archive_dir:
             problems.append("ZENTRAL_AUDIT_KEEP_DAYS needs ZENTRAL_AUDIT_ARCHIVE_DIR")
         if problems:

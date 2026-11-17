@@ -85,6 +85,7 @@ nav:
       - Administration: guides/administration.md
       - Systems catalogue: guides/systems.md
       - Privacy requests: guides/privacy-officer.md
+      - Requester portal: guides/requester-portal.md
       - Auditing: guides/auditor.md
       - AI agents over MCP: guides/mcp.md
       - REST API: guides/api.md

@@ -18,6 +18,8 @@ for it day to day, who can see it, how it is protected, and when it ends.
 | **Staff identity** — ID, name, e-mail | Identity provider, at sign-in | Showing who did what | Admin |
 | **Audit events** | Zentral | Accountability and security | Auditor |
 | **Notifications** | Zentral | Telling staff what needs them | Admin |
+| **Ratings** | Requester, in the portal | Learning how the desk is doing | The handling team |
+| **Portal links and sessions** | Zentral | Letting requesters sign in | Admin |
 | **Operational logs** | Zentral | Running the system | Platform owner |
 | **Channel secrets** | Admin | Connecting channels | Admin |
 
@@ -32,6 +34,8 @@ for it day to day, who can see it, how it is protected, and when it ends.
 | **Ticket metadata** | Team scope; aggregates in Insights | Contains no content | Kept as anonymous statistics |
 | **Staff identity** | Whoever can see the tickets they touched | Database access control | While they use Zentral; remove leavers |
 | **Audit events** | Auditors, admins, privacy officers | Hash-chained, append-only, no content | Your audit retention policy |
+| **Ratings** | Team scope; comment masked without `ticket:read_pii` | Comment encrypted | Score kept as statistics; comment removed with the ticket's content |
+| **Portal links and sessions** | Nobody: only hashes are stored | SHA-256, HttpOnly cookie | Minutes (links) or hours (sessions); at once on erasure |
 | **Notifications** | Only the person they are for | No content: a ticket key and an event | 30 days after reading, 90 days at most |
 | **Operational logs** | Operators | Your log platform; masked as a safety net | Your log retention policy |
 | **Channel secrets** | Nobody — write-only | Encrypted | When the channel is deleted |

@@ -16,6 +16,7 @@ from zentral.db.models import (
     Job,
     Message,
     MessageKind,
+    Rating,
     System,
     Team,
     Ticket,
@@ -192,7 +193,16 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
 
 async def present_ticket(ctx: Ctx, ticket: Ticket) -> TicketOut:
     names = await _user_names(ctx, {ticket.assignee_id} if ticket.assignee_id else set())
-    return _present(ctx, ticket, names)
+    out = _present(ctx, ticket, names)
+    rating = await ctx.session.get(Rating, ticket.id)
+    if rating is not None:
+        out.rating_score = rating.score
+        if rating.comment:
+            # The requester's own words: personal data like any message.
+            out.rating_comment = (
+                rating.comment if ctx.can(P.TICKET_READ_PII) else redact(rating.comment)
+            )
+    return out
 
 
 # --- queries ----------------------------------------------------------------------
@@ -361,6 +371,7 @@ ACTIVITY_ACTIONS = (
     "ticket.merge_received",
     "ticket.classification_skipped",
     "ticket.escalated",
+    "ticket.rated",
     "message.delivered",
     "message.delivery_failed",
 )

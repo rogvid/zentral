@@ -7,6 +7,7 @@
 | **E-mail** (Microsoft 365 shared mailbox) | Anyone — staff, customers, partners | The one channel everybody already has | Sender address and name, subject, body as plain text |
 | **Microsoft Teams** (@mention in a channel) | Staff | Asking where people already work | Directory ID and name, message text |
 | **Webhook** | Your systems: monitoring, CI, applications | Machines notice problems before people do | Title, description, severity, optionally the system and a requester |
+| **Requester portal** | People who contacted the desk before | Following up without writing another e-mail | Subject, description, optionally the system; replies on their own requests |
 | **By hand** (web, API) | Agents, on behalf of a caller | Phone calls and walk-ups | Whatever the agent types |
 | **MCP** | AI agents | Automation that opens internal tickets | Subject and body; no requester |
 | **Plug-ins** (e.g. Slack) | Your choice | New channels without changing Zentral | Normalised by the plug-in |

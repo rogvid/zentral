@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
 
-from zentral.db.models import System, Ticket, TicketStatus, utcnow
+from zentral.db.models import Rating, System, Ticket, TicketStatus, utcnow
 from zentral.schemas import CountOut, DayOut, InsightsOut, TargetOut
 from zentral.security.rbac import Permission as P
 from zentral.services import sla
@@ -107,6 +107,16 @@ async def insights(ctx: Ctx, days: int = 30) -> InsightsOut:
         )
     )
 
+    scores = list(
+        (
+            await ctx.session.scalars(
+                select(Rating.score)
+                .join(Ticket, Ticket.id == Rating.ticket_id)
+                .where(scope, Rating.created_at >= since)
+            )
+        ).all()
+    )
+
     return InsightsOut(
         days=days,
         created=len(created),
@@ -134,4 +144,11 @@ async def insights(ctx: Ctx, days: int = 30) -> InsightsOut:
             for p in ("urgent", "high", "normal", "low")
             if (n := sum(1 for t, _ in created if t.priority == p))
         ],
+        ratings=len(scores),
+        rating_average=round(statistics.fmean(scores), 2) if scores else None,
+        ratings_by_score=[
+            CountOut(label=str(score), count=scores.count(score)) for score in (5, 4, 3, 2, 1)
+        ]
+        if scores
+        else [],
     )

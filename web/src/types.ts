@@ -67,6 +67,8 @@ export interface Ticket {
   merged_into_id: number | null;
   merged_into_key: string | null;
   ai_excluded: boolean;
+  rating_score: number | null;
+  rating_comment: string | null;
   pii_redacted: boolean;
 }
 
@@ -89,6 +91,9 @@ export interface Insights {
   by_category: { label: string; count: number }[];
   by_channel: { label: string; count: number }[];
   by_priority: { label: string; count: number }[];
+  ratings: number;
+  rating_average: number | null;
+  ratings_by_score: { label: string; count: number }[];
 }
 
 export interface TicketPage {

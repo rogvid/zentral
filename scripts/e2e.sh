@@ -23,6 +23,8 @@ export ZENTRAL_DATABASE_URL="sqlite+aiosqlite:///$work/e2e.db"
 export ZENTRAL_STATIC_DIR="$root/web/dist"
 export ZENTRAL_PUBLIC_BASE_URL="http://127.0.0.1:$port"
 export ZENTRAL_LOG_LEVEL=WARNING
+export ZENTRAL_PORTAL_ENABLED=true
+export ZENTRAL_PORTAL_MAIL_CHANNEL="Monitoring & forms"
 
 uv run zentral db upgrade >/dev/null
 uv run zentral serve --port "$port" >"$work/serve.log" 2>&1 & pids+=($!)
@@ -32,5 +34,6 @@ uv run python scripts/seed_history.py >/dev/null
 uv run zentral worker >"$work/worker.log" 2>&1 & pids+=($!)
 sleep 4   # let the worker classify the seeded tickets
 
+export PORTAL_LINK="$(uv run python scripts/portal_link.py tom.nielsen@example.com 2>/dev/null | tail -n 1)"
 [ $# -ge 1 ] && mkdir -p "$1"
 BASE_URL="http://127.0.0.1:$port" node "${E2E_SCRIPT:-web/e2e/walkthrough.mjs}" "$@" || { echo "--- server log"; tail -20 "$work/serve.log"; exit 1; }

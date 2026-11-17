@@ -99,7 +99,7 @@ async def resolve_team_ids(session: AsyncSession, principal: Principal) -> froze
 
 async def touch_user(session: AsyncSession, principal: Principal) -> None:
     """Mirror the caller's directory attributes so they can be shown as assignee/author."""
-    if principal.kind == "system":
+    if principal.kind in ("system", "requester"):
         return
     user = await session.get(User, principal.subject)
     now = utcnow()

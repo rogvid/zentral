@@ -39,6 +39,23 @@ flowchart LR
 
 The detailed checklist is in the [access review runbook](../runbooks/access-review.md#leaver-checklist-do-not-wait-for-the-quarterly-review).
 
+## Requesters
+
+People who ask for help never get a staff account. In the
+[requester portal](../guides/requester-portal.md) they prove who they are by
+opening a one-time link sent to the address they used, and then see only their
+own requests and the public conversation.
+
+```mermaid
+flowchart LR
+    R["Requester"] --> L["Asks for a link<br/>(same answer for everyone)"]
+    L --> K{"Known requester?"}
+    K -- no --> N["Nothing sent;<br/>attempt recorded"]
+    K -- yes --> E["One-time link e-mailed<br/>(15 min, once)"]
+    E --> S["Session cookie<br/>(HttpOnly, portal only, 8 h)"]
+    S --> V["Own requests,<br/>public conversation only"]
+```
+
 ## Machines are people too (almost)
 
 | Caller | Credential | What it may do |
@@ -48,6 +65,7 @@ The detailed checklist is in the [access review runbook](../runbooks/access-revi
 | Monitoring system | Per-channel ingest token | Create messages on that one channel |
 | Teams / Slack | Per-channel signing secret | Create messages on that one channel |
 | Zentral's worker | Internal only, never reachable over the network | Recorded as `system:worker` |
+| Requester (portal) | One-time e-mail link, then a portal-only session | Their own requests; recorded as `contact:<id>` |
 
 ## Outcome
 

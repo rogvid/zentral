@@ -85,6 +85,9 @@ class TicketOut(Out):
     merged_into_key: str | None = None
     # The requester objected to automated analysis: no AI triage, hidden from AI agents.
     ai_excluded: bool = False
+    # The requester's rating, once given in the portal (1-5).
+    rating_score: int | None = None
+    rating_comment: str | None = None
     pii_redacted: bool
 
 
@@ -150,6 +153,10 @@ class InsightsOut(Out):
     by_category: list[CountOut]
     by_channel: list[CountOut]
     by_priority: list[CountOut]
+    # Requester ratings (1-5) given in the period, on tickets in scope.
+    ratings: int = 0
+    rating_average: float | None = None
+    ratings_by_score: list[CountOut] = Field(default_factory=list)
 
 
 class TicketCreate(In):
@@ -205,6 +212,63 @@ class NotificationsRead(In):
 
     ids: list[uuid.UUID] | None = Field(default=None, max_length=200)
     ticket_id: int | None = Field(default=None, ge=1)
+
+
+# --- requester portal ------------------------------------------------------------
+
+
+class PortalLinkRequest(In):
+    email: Email
+
+
+class PortalSessionRequest(In):
+    token: str = Field(min_length=20, max_length=200)
+
+
+class PortalProfile(Out):
+    display_name: str
+    email: str
+
+
+class PortalTicketIn(In):
+    subject: Short
+    body: Body
+    system_id: uuid.UUID | None = None
+
+
+class PortalReplyIn(In):
+    body: Body
+
+
+class RatingIn(In):
+    score: int = Field(ge=1, le=5)
+    comment: Annotated[str, StringConstraints(max_length=2000)] | None = None
+
+
+class PortalTicketOut(Out):
+    id: int
+    key: str
+    subject: str
+    status: TicketStatus
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: datetime | None
+    merged_into_key: str | None
+    rating: int | None
+    can_rate: bool
+    can_reply: bool
+
+
+class PortalMessageOut(Out):
+    from_you: bool
+    author: str
+    body: str
+    created_at: datetime
+
+
+class PortalTicketDetail(Out):
+    ticket: PortalTicketOut
+    messages: list[PortalMessageOut]
 
 
 # --- saved replies ----------------------------------------------------------------

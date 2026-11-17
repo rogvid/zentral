@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Compass } from "../brand";
 import { BarList, LineChart } from "../components/charts";
+
+const RATING_LABEL: Record<string, string> = { "5": "Excellent", "4": "Good", "3": "OK", "2": "Not great", "1": "Poor" };
 import { useApp, useLoad } from "../context";
 import { channelName, duration, titleCase } from "../lib";
 import type { Insights } from "../types";
@@ -138,6 +140,24 @@ export function InsightsPage() {
               <BarList describe="Tickets received per priority" items={d.by_priority.map((c) => ({ ...c, label: titleCase(c.label) }))} />
             </section>
           </div>
+
+          <section className="card panel satisfaction">
+            <h2>Requester satisfaction</h2>
+            {d.ratings > 0 && d.rating_average !== null ? (
+              <>
+                <p className="satisfaction-score">
+                  <strong>{d.rating_average.toFixed(1)}</strong> out of 5
+                  <span className="muted"> · {d.ratings} {d.ratings === 1 ? "rating" : "ratings"} from the requester portal</span>
+                </p>
+                <BarList
+                  describe="Ratings given, by score"
+                  items={d.ratings_by_score.map((c) => ({ ...c, label: `${c.label} · ${RATING_LABEL[c.label] ?? ""}` }))}
+                />
+              </>
+            ) : (
+              <p className="muted">No ratings in this period. Requesters can rate resolved requests in the portal.</p>
+            )}
+          </section>
         </div>
       )}
     </>

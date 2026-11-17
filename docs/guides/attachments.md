@@ -33,8 +33,8 @@ flowchart LR
 | **Files are downloads, never pages**: `Content-Disposition: attachment`, `sandbox` CSP, `nosniff` | Even a crafted PDF cannot run in Zentral's origin |
 | Names are cleaned (no paths, no control or direction-override characters) and the extension is set from the real type | `invoice.pdf.exe` cannot pretend |
 
-Requesters see the files *they* sent in the portal; files an agent attaches are
-internal, like notes. Files go with the ticket's content under the
+Requesters see the files they sent, and files sent to them with a reply;
+files an agent attaches as a note stay internal. Files go with the ticket's content under the
 [retention policy](../processes/data.md#retention) and on erasure, are
 included (the requester's own) in a data-subject export, and move along when
 tickets are merged.
@@ -73,8 +73,12 @@ files*, if one mailbox should not take files.
 
 - Files appear under the message they came with; images show a preview — click
   it to enlarge, click the name to download.
-- **Attach file** under the composer, or **paste a screenshot** (Ctrl+V) into
-  it. Files you attach are internal notes: they are never sent to the
-  requester.
+- **Sending a file to the requester**: on the *Reply to requester* tab, attach
+  or paste it. It waits under the reply ("checking…") until the malware check
+  has passed — usually seconds — and goes out with the reply: as an e-mail
+  attachment (up to 3 MB together), and in the requester's portal. Remove it
+  with × if you change your mind.
+- **Keeping a file internal**: on the *Internal note* tab, attach or paste it;
+  it becomes a note and never leaves the desk.
 - "Checking for malware…" turns into the file within seconds; "Blocked" means
   the scanner found a threat and the content is gone.

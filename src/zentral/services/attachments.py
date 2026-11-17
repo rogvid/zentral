@@ -22,11 +22,20 @@ from __future__ import annotations
 import base64
 import hashlib
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import undefer
 
-from zentral.db.models import Attachment, AttachmentStatus, Job, Ticket, utcnow
+from zentral.db.models import (
+    Attachment,
+    AttachmentStatus,
+    Job,
+    Message,
+    MessageKind,
+    Ticket,
+    utcnow,
+)
 from zentral.files import FileRejected, safe_filename, sanitize, sniff
 from zentral.schemas import AttachmentOut
 from zentral.security.rbac import Permission as P
@@ -158,11 +167,20 @@ async def list_for_ticket(ctx: Ctx, ticket_id: int) -> list[AttachmentOut]:
     return [out(ctx, a) for a in rows]
 
 
-async def upload(ctx: Ctx, ticket_id: int, filename: str, data: bytes) -> AttachmentOut:
-    """Staff attach a file. It appears in the conversation as an internal note."""
-    from zentral.db.models import Message, MessageKind
+async def upload(
+    ctx: Ctx, ticket_id: int, filename: str, data: bytes, purpose: str = "note"
+) -> AttachmentOut:
+    """Staff attach a file.
 
+    ``note``: it appears in the conversation at once, as an internal note.
+    ``reply``: it waits to be sent with a reply (see ``link_to_reply``); a file
+    that is never sent is removed after a day.
+    """
     ticket = await load_ticket(ctx, ticket_id)
+    if purpose == "reply":
+        ctx.require(P.TICKET_REPLY, "ticket", str(ticket_id))
+        attachment = await add(ctx, ticket, filename, data, author_user_id=ctx.principal.subject)
+        return out(ctx, attachment)
     ctx.require(P.TICKET_NOTE, "ticket", str(ticket_id))
     note = Message(
         ticket_id=ticket.id,
@@ -179,6 +197,76 @@ async def upload(ctx: Ctx, ticket_id: int, filename: str, data: bytes) -> Attach
     note.body = f"Attached {attachment.filename}."
     ticket.updated_at = utcnow()
     return out(ctx, attachment)
+
+
+# What a reply may carry by e-mail: Graph takes at most ~4 MB per message.
+OUTBOUND_MAX_BYTES = 3 * 1024 * 1024
+
+
+async def link_to_reply(
+    ctx: Ctx, ticket: Ticket, message_id: uuid.UUID, ids: list[uuid.UUID], *, by_mail: bool
+) -> list[Attachment]:
+    """Attach files uploaded for a reply to that reply. Only files that passed the scan."""
+    wanted = set(ids)
+    rows = list(
+        (
+            await ctx.session.scalars(
+                select(Attachment).where(
+                    Attachment.id.in_(wanted),
+                    Attachment.ticket_id == ticket.id,
+                    Attachment.author_user_id.is_not(None),
+                    Attachment.message_id.is_(None),
+                )
+            )
+        ).all()
+    )
+    if len(rows) != len(wanted):
+        raise ValidationFailed("a file is unknown, belongs elsewhere, or was already sent")
+    for a in rows:
+        if a.status != AttachmentStatus.CLEAN:
+            raise ValidationFailed(
+                f"{a.filename} is still being checked for malware"
+                if a.status == AttachmentStatus.SCANNING
+                else f"{a.filename} was blocked by the malware scanner"
+            )
+    if by_mail and sum(a.size for a in rows) > OUTBOUND_MAX_BYTES:
+        raise ValidationFailed(
+            "these files are too large for e-mail together (3 MB); send fewer, or share them "
+            "through the requester portal"
+        )
+    for a in rows:
+        a.message_id = message_id
+    return rows
+
+
+async def outbound_files(ctx: Ctx, message_id: uuid.UUID) -> list[Attachment]:
+    """Worker: the files to deliver with a reply."""
+    return list(
+        (
+            await ctx.session.scalars(
+                select(Attachment)
+                .options(undefer(Attachment.data))
+                .where(
+                    Attachment.message_id == message_id,
+                    Attachment.status == AttachmentStatus.CLEAN,
+                )
+                .order_by(Attachment.created_at)
+            )
+        ).all()
+    )
+
+
+async def purge_unsent(ctx: Ctx) -> int:
+    """Files uploaded for a reply that was never sent do not linger."""
+    cutoff = utcnow() - timedelta(days=1)
+    result = await ctx.session.execute(
+        delete(Attachment).where(
+            Attachment.message_id.is_(None),
+            Attachment.author_user_id.is_not(None),
+            Attachment.created_at < cutoff,
+        )
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def download(ctx: Ctx, ticket_id: int, attachment_id: uuid.UUID) -> tuple[Attachment, bytes]:
@@ -217,13 +305,17 @@ async def _content(ctx: Ctx, ticket_id: int, attachment_id: uuid.UUID) -> tuple[
 async def requester_download(
     ctx: Ctx, contact_id: uuid.UUID, ticket_id: int, attachment_id: uuid.UUID
 ) -> tuple[Attachment, bytes]:
-    """Portal: requesters open only files they sent themselves."""
+    """Portal: requesters open files they sent, and files sent to them."""
     ticket = await ctx.session.get(Ticket, ticket_id)
+    shared = select(Message.id).where(
+        Message.ticket_id == ticket_id, Message.kind == MessageKind.OUTBOUND
+    )
     owned = await ctx.session.scalar(
         select(Attachment.id).where(
             Attachment.id == attachment_id,
             Attachment.ticket_id == ticket_id,
-            Attachment.author_contact_id == contact_id,
+            # Files they sent, and files the desk sent them — never internal ones.
+            (Attachment.author_contact_id == contact_id) | Attachment.message_id.in_(shared),
         )
     )
     if ticket is None or ticket.requester_id != contact_id or owned is None:
@@ -246,14 +338,19 @@ async def move(ctx: Ctx, source_id: int, target_id: int) -> None:
 async def export(
     ctx: Ctx, ticket_id: int, *, author_contact_id: uuid.UUID
 ) -> list[dict[str, object]]:
-    """For a data-subject access request: the person's files, base64-encoded."""
+    """For a data-subject access request: files the person sent and was sent, base64."""
     rows = (
         await ctx.session.scalars(
             select(Attachment)
             .options(undefer(Attachment.data))
             .where(
                 Attachment.ticket_id == ticket_id,
-                Attachment.author_contact_id == author_contact_id,
+                (Attachment.author_contact_id == author_contact_id)
+                | Attachment.message_id.in_(
+                    select(Message.id).where(
+                        Message.ticket_id == ticket_id, Message.kind == MessageKind.OUTBOUND
+                    )
+                ),
             )
             .order_by(Attachment.created_at)
         )

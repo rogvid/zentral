@@ -14,6 +14,7 @@ from zentral.db.models import (
     AuditEvent,
     Contact,
     DeliveryStatus,
+    IngestSource,
     Job,
     Message,
     MessageKind,
@@ -585,10 +586,20 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
     outbound = data.kind == "outbound"
     ctx.require(P.TICKET_REPLY if outbound else P.TICKET_NOTE, "ticket", str(ticket_id))
     delivery = DeliveryStatus.NOT_APPLICABLE
+    if data.attachment_ids and not outbound:
+        raise ValidationFailed("files for a note are attached when they are uploaded")
+    by_mail = False
     if outbound:
         if ticket.requester_id is None:
             raise ValidationFailed("ticket has no requester to reply to")
         delivery = DeliveryStatus.PENDING if ticket.source_id else DeliveryStatus.NOT_APPLICABLE
+        if data.attachment_ids:
+            by_mail = await _channel_sends_files(ctx, ticket)
+            if not by_mail and not ctx.settings.portal_enabled:
+                raise ValidationFailed(
+                    "this ticket's channel cannot carry files, and there is no requester "
+                    "portal to share them through"
+                )
     message = Message(
         ticket_id=ticket.id,
         kind=MessageKind.OUTBOUND if outbound else MessageKind.NOTE,
@@ -598,6 +609,13 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
     )
     ctx.session.add(message)
     await ctx.session.flush()
+    sent_files: list[Any] = []
+    if data.attachment_ids:
+        from zentral.services import attachments as files
+
+        sent_files = await files.link_to_reply(
+            ctx, ticket, message.id, data.attachment_ids, by_mail=by_mail
+        )
     if delivery == DeliveryStatus.PENDING:
         ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
     if outbound:
@@ -610,7 +628,10 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
         "ticket",
         ticket.id,
         message_id=str(message.id),
+        files=len(sent_files),
     )
+    from zentral.services import attachments as files
+
     return MessageOut(
         id=message.id,
         kind=message.kind,
@@ -619,7 +640,20 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
         author_type="staff",
         delivery_status=message.delivery_status,
         created_at=message.created_at,
+        attachments=[files.out(ctx, a) for a in sent_files],
     )
+
+
+async def _channel_sends_files(ctx: Ctx, ticket: Ticket) -> bool:
+    if ticket.source_id is None:
+        return False
+    source = await ctx.session.get(IngestSource, ticket.source_id)
+    if source is None or not source.enabled:
+        return False
+    from zentral.connectors.base import Capability
+    from zentral.connectors.registry import capabilities_of
+
+    return Capability.SEND_FILES in capabilities_of(ctx.settings, source.connector)
 
 
 async def auto_close(ctx: Ctx, *, batch: int = 500) -> int:

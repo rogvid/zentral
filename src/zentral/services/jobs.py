@@ -27,6 +27,7 @@ from zentral.connectors.base import (
     Capability,
     ConnectorError,
     ConnectorRejected,
+    OutboundAttachment,
     OutboundMessage,
 )
 from zentral.db.models import (
@@ -260,6 +261,7 @@ class Worker:
             await ctx.commit()
         await notifications.purge(ctx)
         await portal.purge_tokens(ctx)
+        await attachments.purge_unsent(ctx)
 
     async def _escalate(self, ctx: Ctx, payload: dict[str, object]) -> None:
         """Warn about targets at risk, escalate missed ones."""
@@ -316,6 +318,9 @@ class Worker:
             message.delivery_status = DeliveryStatus.NOT_APPLICABLE
             return
         requester = ticket.requester
+        files = await attachments.outbound_files(ctx, message.id)
+        if files and Capability.SEND_FILES not in connector.capabilities:
+            files = []  # e.g. Teams: the files are shared through the portal instead
         await connector.send(
             OutboundMessage(
                 ticket_key=ticket_key(ctx, ticket.id),
@@ -324,6 +329,11 @@ class Worker:
                 recipient_email=requester.email if requester else None,
                 recipient_name=requester.display_name if requester else None,
                 thread_id=ticket.thread_ref,
+                attachments=tuple(
+                    OutboundAttachment(f.filename, f.content_type, f.data)
+                    for f in files
+                    if f.data is not None
+                ),
             )
         )
         message.delivery_status = DeliveryStatus.SENT

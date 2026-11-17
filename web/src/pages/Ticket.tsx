@@ -224,9 +224,23 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
   const canReply = can("ticket:reply") && ticket.requester !== null;
   const templates = useLoad(() => api.get<Template[]>("/templates").catch(() => []), []);
   const canNote = can("ticket:note");
+  const canAttachToReply = config.attachments_enabled && canReply;
   const [kind, setKind] = useState<"outbound" | "note">(canReply ? "outbound" : "note");
   const [body, setBodyState] = useState(() => drafts.get(ticket.id) ?? "");
   const [busy, setBusy] = useState(false);
+  // Files waiting to go out with the next reply, with their malware-check status.
+  const [held, setHeld] = useState<AttachmentInfo[]>([]);
+  const checking = held.some((f) => f.status === "scanning");
+  useEffect(() => {
+    if (!checking) return;
+    const timer = window.setInterval(() => {
+      api
+        .get<AttachmentInfo[]>(`/tickets/${ticket.id}/attachments`)
+        .then((all) => setHeld((current) => current.map((f) => all.find((a) => a.id === f.id) ?? f)))
+        .catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [api, checking, ticket.id]);
   if (!canReply && !canNote) return null;
 
   function setBody(text: string) {
@@ -244,20 +258,26 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
   }
 
   async function attach(files: File[]) {
-    if (!canAttach || files.length === 0) return;
+    if (files.length === 0) return;
+    const forReply = kind === "outbound";
+    if (forReply ? !canAttachToReply : !canAttach) return;
     setUploading((n) => n + files.length);
     for (const file of files) {
       try {
         if (file.size > config.attachment_max_bytes) throw new Error(`${file.name} is too large`);
-        await api.upload(`/tickets/${ticket.id}/attachments?filename=${encodeURIComponent(file.name)}`, file);
+        const path = `/tickets/${ticket.id}/attachments?filename=${encodeURIComponent(file.name)}&purpose=${forReply ? "reply" : "note"}`;
+        const added = await api.upload<AttachmentInfo>(path, file);
+        if (forReply) setHeld((current) => [...current, added]);
       } catch (e) {
         notify(e instanceof Error ? e.message : "Could not attach the file", "error");
       } finally {
         setUploading((n) => n - 1);
       }
     }
-    notify("Attached. It can be opened once the malware check has passed.");
-    onSent();
+    if (!forReply) {
+      notify("Attached. It can be opened once the malware check has passed.");
+      onSent();
+    }
   }
 
   async function send() {
@@ -265,7 +285,9 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
     setBusy(true);
     setBody(""); // clear now, so text typed while this is in flight is never wiped
     try {
-      await api.post(`/tickets/${ticket.id}/messages`, { kind, body: text });
+      const sending = kind === "outbound" ? held.filter((f) => f.status === "clean").map((f) => f.id) : [];
+      await api.post(`/tickets/${ticket.id}/messages`, { kind, body: text, attachment_ids: sending });
+      if (sending.length) setHeld((current) => current.filter((f) => !sending.includes(f.id)));
       onSent();
     } catch (e) {
       // Give the text back unless the person has already started something new.
@@ -303,7 +325,7 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
         onChange={(e) => setBody(e.target.value)}
         onPaste={(e) => {
           const files = pastedFiles([...e.clipboardData.items]);
-          if (files.length > 0 && canAttach) {
+          if (files.length > 0 && (kind === "outbound" ? canAttachToReply : canAttach)) {
             e.preventDefault();
             void attach(files);
           }
@@ -312,6 +334,21 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim() && !busy) void send();
         }}
       />
+      {kind === "outbound" && held.length > 0 && (
+        <ul className="held-files" aria-label="Files to send with this reply">
+          {held.map((f) => (
+            <li key={f.id} className={`chip held-${f.status}`}>
+              {f.filename}
+              <span className="muted">
+                {f.status === "scanning" ? " · checking…" : f.status === "blocked" ? " · blocked, will not be sent" : ""}
+              </span>
+              <button className="chip-x" aria-label={`Do not send ${f.filename}`} onClick={() => setHeld((current) => current.filter((x) => x.id !== f.id))}>
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="composer-foot">
         {(templates.data ?? []).length > 0 && (
           <select
@@ -329,7 +366,7 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
             ))}
           </select>
         )}
-        {canAttach && (
+        {(kind === "outbound" ? canAttachToReply : canAttach) && (
           <>
             <input
               ref={fileInput}
@@ -342,7 +379,7 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
                 e.target.value = "";
               }}
             />
-            <button className="btn btn-quiet" disabled={uploading > 0} onClick={() => fileInput.current?.click()} title="Files are attached as internal notes. You can also paste a screenshot.">
+            <button className="btn btn-quiet" disabled={uploading > 0} onClick={() => fileInput.current?.click()} title={kind === "outbound" ? "Sent with your reply once checked for malware. You can also paste a screenshot." : "Added as an internal note. You can also paste a screenshot."}>
               {uploading > 0 ? "Attaching…" : "Attach file"}
             </button>
           </>
@@ -350,7 +387,7 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
         <span className="muted">
           {kind === "outbound" ? "Leaves the organisation through the ticket's channel." : "Never leaves the service desk."} Ctrl+Enter to send.
         </span>
-        <button className="btn btn-primary" disabled={busy || !body.trim()} onClick={() => void send()}>
+        <button className="btn btn-primary" disabled={busy || !body.trim() || (kind === "outbound" && checking)} onClick={() => void send()}>
           {kind === "outbound" ? "Send reply" : "Add note"}
         </button>
       </div>

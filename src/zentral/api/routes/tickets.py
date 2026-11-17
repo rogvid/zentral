@@ -164,10 +164,15 @@ async def upload_attachment(
     ctx: CtxDep,
     ticket_id: int,
     filename: Annotated[str, Query(min_length=1, max_length=200)],
+    purpose: Annotated[str, Query(pattern="^(note|reply)$")] = "note",
 ) -> AttachmentOut:
-    """Attach a file (the request body). It is scanned before anyone can open it."""
+    """Attach a file (the request body). It is scanned before anyone can open it.
+
+    ``purpose=note`` adds it as an internal note; ``purpose=reply`` holds it for
+    the next reply, which sends it to the requester (``attachment_ids``).
+    """
     data = await read_upload(request, ctx)
-    out = await attachments.upload(ctx, ticket_id, filename, data)
+    out = await attachments.upload(ctx, ticket_id, filename, data, purpose)
     await ctx.commit()
     return out
 

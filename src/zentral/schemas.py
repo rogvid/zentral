@@ -196,6 +196,8 @@ class TicketUpdate(In):
 class MessageCreate(In):
     kind: Literal["outbound", "note"]
     body: Body
+    # Files uploaded for this reply (purpose=reply); sent with it to the requester.
+    attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5)
 
 
 class MergeIn(In):

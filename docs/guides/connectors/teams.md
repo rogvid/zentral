@@ -50,7 +50,14 @@ and answer in Teams directly.
 
 - Outgoing webhooks work in **team channels**, not private chats.
 - Teams must be able to reach Zentral's public URL.
-- Formatting is reduced to plain text; attachments and images are ignored.
+- Formatting is reduced to plain text.
+- **Files and images posted in Teams cannot be received.** An outgoing webhook
+  gets no credential to download them (that needs a full bot registration).
+  They are not lost silently: the ticket records how many files were left
+  behind, and Zentral's answer in Teams asks the person to e-mail them,
+  quoting the ticket key. Agents' replies to Teams carry text only; files sent
+  with a reply reach the requester through the
+  [portal](../requester-portal.md) instead.
 - Teams expects an answer within a few seconds; Zentral stores the ticket and
   answers immediately, classification happens afterwards.
 

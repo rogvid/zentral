@@ -59,7 +59,7 @@ async function as(browser, persona, steps, viewport = { width: 1380, height: 900
   try {
     await steps(page);
   } catch (e) {
-    problems.push(`[${persona}] step failed: ${String(e.message).split("\n")[0]}`);
+    problems.push(`[${persona}] step failed: ${String(e.message).split("\n").slice(0, 3).join(" | ")}`);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/FAILED-${persona}.png` }).catch(() => {});
   }
   await context.close();
@@ -167,12 +167,22 @@ await as(browser, "agent", async (page) => {
   await page.locator(".thread .msg-body", { hasText: "was merged into this ticket" }).waitFor();
 
   // A screenshot: attached, scanned, then previewed.
+  await page.getByRole("tab", { name: "Internal note" }).click();
   await page.locator('.composer input[type="file"]').setInputFiles({ name: "error-dialog.png", mimeType: "image/png", buffer: PNG });
   await page.locator(".thread .msg-body", { hasText: "Attached error-dialog.png." }).waitFor();
   await waitForPreview(page);
   await page.getByRole("button", { name: "View error-dialog.png" }).click();
   await page.getByRole("dialog").locator("img.file-full").waitFor();
   await page.keyboard.press("Escape");
+
+  // Sending a file to the requester: held until the malware check passes, then sent with the reply.
+  await page.getByRole("tab", { name: "Reply to requester" }).click();
+  await page.locator('.composer input[type="file"]').setInputFiles({ name: "reset-steps.png", mimeType: "image/png", buffer: PNG });
+  await page.locator(".held-files li", { hasText: "reset-steps.png" }).waitFor();
+  await page.waitForFunction(() => !document.querySelector(".held-files")?.textContent?.includes("checking"), undefined, { timeout: 15000 });
+  await page.getByLabel("Reply", { exact: true }).fill("These steps should get you back in.");
+  await page.getByRole("button", { name: "Send reply" }).click();
+  await page.locator(".msg-outbound .file", { hasText: "reset-steps.png" }).waitFor();
 
   // Role boundaries are visible in the UI…
   await go(page, "admin");

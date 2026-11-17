@@ -35,9 +35,19 @@ PATCH  /tickets/{id}
 GET    /tickets/{id}/messages
 POST   /tickets/{id}/messages
 POST   /tickets/{id}/merge          {"into_ticket_id": 12}
+POST   /tickets/{id}/attachments?filename=x.png[&purpose=reply]   raw file body
+GET    /tickets/{id}/attachments
+GET    /tickets/{id}/attachments/{attachment_id}                  needs ticket:read_pii
 GET    /notifications               your own; content-free
 POST   /notifications/read          {"ids": [...]} | {"ticket_id": 42} | {} for all
 ```
+
+A file uploaded with `purpose=note` (default) appears as an internal note.
+With `purpose=reply` it is held, and sent to the requester with the next reply
+that lists it: `{"kind": "outbound", "body": "…", "attachment_ids": ["…"]}`.
+Only files the malware scan has cleared can be sent, at most five, and by
+e-mail at most 3 MB together. Held files that are never sent are removed after
+a day.
 
 List filters: `status` (repeatable), `priority`, `category`, `team_id`,
 `system_id`, `no_system`, `assignee_id`, `unassigned`, `overdue`,

@@ -181,6 +181,8 @@ the policy for one mailbox — choose a probe that the policy must exclude.
   ticket key: someone who spoofs an address learns nothing, and the real owner
   gets one short, harmless message. For an internal desk, restrict *Allowed
   recipient domains* to your own.
+- **Files in replies**: agents can send scanned files with a reply, as e-mail
+  attachments (up to 3 MB together).
 - **Attachments** are kept when [enabled](../attachments.md): files and screenshots
   pasted into the mail are checked, cleaned and scanned like any other file.
   They also stay in the mailbox.

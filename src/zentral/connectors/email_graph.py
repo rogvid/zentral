@@ -274,7 +274,9 @@ def is_automatic(item: dict[str, Any]) -> bool:
 
 class GraphMailConnector(Connector):
     name: ClassVar[str] = "email_graph"
-    capabilities: ClassVar[frozenset[Capability]] = frozenset({Capability.POLL, Capability.SEND})
+    capabilities: ClassVar[frozenset[Capability]] = frozenset(
+        {Capability.POLL, Capability.SEND, Capability.SEND_FILES}
+    )
     config_model: ClassVar[type[BaseModel]] = GraphMailConfig
     secret_fields: ClassVar[frozenset[str]] = frozenset({"tenant_id", "client_id", "client_secret"})
     required_secrets: ClassVar[frozenset[str]] = secret_fields
@@ -522,6 +524,21 @@ class GraphMailConnector(Connector):
                     ),
                     "body": {"contentType": "Text", "content": message.body},
                     "toRecipients": [{"emailAddress": {"address": message.recipient_email}}],
+                    **(
+                        {
+                            "attachments": [
+                                {
+                                    "@odata.type": "#microsoft.graph.fileAttachment",
+                                    "name": a.filename,
+                                    "contentType": a.content_type,
+                                    "contentBytes": base64.b64encode(a.data).decode(),
+                                }
+                                for a in message.attachments
+                            ]
+                        }
+                        if message.attachments
+                        else {}
+                    ),
                 },
                 "saveToSentItems": cfg.save_to_sent_items,
             },

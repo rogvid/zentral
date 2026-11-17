@@ -279,12 +279,14 @@ async def get_ticket(ctx: Ctx, contact: Contact, ticket_id: int) -> PortalTicket
             .order_by(Message.created_at)
         )
     ).all()
-    # Only files they sent themselves: what staff attach is internal, like notes.
+    # Files they sent, and files sent to them with a reply. What staff attach to
+    # internal notes stays internal: notes are not in this list at all.
+    public = {m.id for m in messages}
     own_files: dict[uuid.UUID | None, list[AttachmentOut]] = {}
     for a in (
         await ctx.session.scalars(
             select(Attachment)
-            .where(Attachment.ticket_id == ticket.id, Attachment.author_contact_id == contact.id)
+            .where(Attachment.ticket_id == ticket.id, Attachment.message_id.in_(public))
             .order_by(Attachment.created_at)
         )
     ).all():
@@ -295,7 +297,7 @@ async def get_ticket(ctx: Ctx, contact: Contact, ticket_id: int) -> PortalTicket
             author="You" if m.kind == MessageKind.INBOUND else "Service desk",
             body=m.body,
             created_at=m.created_at,
-            attachments=own_files.get(m.id, []) if m.kind == MessageKind.INBOUND else [],
+            attachments=own_files.get(m.id, []),
         )
         for m in messages
         if m.body != ERASED

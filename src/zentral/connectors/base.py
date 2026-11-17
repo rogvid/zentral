@@ -39,6 +39,8 @@ class Capability(StrEnum):
     WEBHOOK = "webhook"
     POLL = "poll"
     SEND = "send"
+    # Can deliver files with a reply (e-mail can; a Teams workflow webhook cannot).
+    SEND_FILES = "send_files"
 
 
 class ConnectorError(Exception):
@@ -89,6 +91,13 @@ class InboundMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboundAttachment:
+    filename: str
+    content_type: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class OutboundMessage:
     ticket_key: str
     subject: str
@@ -96,6 +105,7 @@ class OutboundMessage:
     recipient_email: str | None
     recipient_name: str | None
     thread_id: str | None = None
+    attachments: tuple[OutboundAttachment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -61,6 +61,8 @@ async def test_initialize_and_tool_listing(client, auth):
         "list_categories",
         "list_systems",
         "get_insights",
+        "merge_tickets",
+        "list_saved_replies",
     }
     assert all(t["description"] for t in tools)
 

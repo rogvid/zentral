@@ -11,7 +11,9 @@ system* and *which team*.
 
 ```mermaid
 flowchart TD
-    T["New ticket"] --> R["Mask personal data:<br/>e-mail, phone, card, IBAN,<br/>national ID, IP, URLs, passwords"]
+    T["New ticket"] --> OB{"Requester objected<br/>to AI processing?"}
+    OB -- yes --> RU
+    OB -- no --> R["Mask personal data:<br/>e-mail, phone, card, IBAN,<br/>national ID, IP, URLs, passwords"]
     R --> P{"AI provider<br/>available?"}
     P -- "yes" --> AI["On-prem model suggests<br/>category · priority · system · summary<br/>+ confidence"]
     P -- "no / error" --> KW["Keyword rules suggest<br/>(no model, nothing leaves)"]
@@ -30,6 +32,7 @@ flowchart TD
 
 | Decision | Made by | Can be changed by | Recorded as |
 |---|---|---|---|
+| Whether a model is used at all | The requester, through the privacy officer (objection, Art. 21) | Privacy officer | `ticket.classification_skipped`, `privacy.ai_objection_recorded` |
 | What the model may see | Zentral (masking is on by default; mandatory for cloud models in production) | Deployment configuration | `input_redacted` on `ticket.classified` |
 | Which model | Deployment configuration | Platform owner | `provider`, `model`, `on_prem` |
 | Suggested labels | The model — an *advisor* | Any agent, at any time | `ticket.classified` |

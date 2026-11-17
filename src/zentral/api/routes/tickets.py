@@ -11,6 +11,7 @@ from zentral.schemas import (
     ActivityOut,
     Email,
     InsightsOut,
+    MergeIn,
     MessageCreate,
     MessageOut,
     TicketCreate,
@@ -92,6 +93,14 @@ async def get_ticket(ctx: CtxDep, ticket_id: int) -> TicketOut:
 @router.patch("/{ticket_id}")
 async def update_ticket(ctx: CtxDep, ticket_id: int, patch: TicketUpdate) -> TicketOut:
     ticket = await tickets.update_ticket(ctx, ticket_id, patch)
+    await ctx.commit()
+    return ticket
+
+
+@router.post("/{ticket_id}/merge")
+async def merge_ticket(ctx: CtxDep, ticket_id: int, data: MergeIn) -> TicketOut:
+    """Fold this ticket into another; returns the ticket it was merged into."""
+    ticket = await tickets.merge_ticket(ctx, ticket_id, data.into_ticket_id)
     await ctx.commit()
     return ticket
 

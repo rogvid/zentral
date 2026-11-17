@@ -32,8 +32,8 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | to see what happened to a ticket, by whom | handovers are easy | Activity |
 | ✓ | drafts that survive switching tickets | I can look something up mid-reply | Composer |
 | ◻ | to be notified when a ticket is assigned to me or becomes overdue | I don't have to keep checking | Not yet: needs a staff notification channel (e-mail or Teams) |
-| ◻ | saved replies for common answers | I answer faster and consistently | Not yet |
-| ◻ | to merge duplicate tickets | one problem is one ticket | Not yet |
+| ✓ **new** | saved replies for common answers | I answer faster and consistently | Saved replies, per team |
+| ✓ **new** | to merge duplicate tickets | one problem is one ticket | [Merge](lifecycle.md#duplicates) |
 
 ## Team lead / administrator
 
@@ -58,7 +58,7 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | to erase a person completely, provably | I can answer an erasure request | Erasure + audit |
 | ✓ | data to disappear on schedule | we keep nothing longer than needed | [Retention](data.md#retention) |
 | ✓ | AI to see only masked text, on our hardware | no personal data leaves | [AI pipeline](../architecture/ai.md) |
-| ◻ | to exclude one person from AI triage | I can honour an objection | Not yet |
+| ✓ **new** | to exclude one person from AI triage | I can honour an objection | [Objection](../guides/privacy-officer.md#objection-to-ai-processing-art-21) |
 
 ## Auditor
 

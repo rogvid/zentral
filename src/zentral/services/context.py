@@ -20,7 +20,7 @@ from zentral.config import Settings
 from zentral.db.models import Team, TeamMember, User, utcnow
 from zentral.db.session import SessionFactory
 from zentral.security.principal import Principal
-from zentral.security.rbac import Permission
+from zentral.security.rbac import Permission, Role
 from zentral.services.errors import PermissionDenied
 
 _USER_TOUCH_SECONDS = 3600
@@ -35,6 +35,14 @@ class Ctx:
     meta: RequestMeta
     team_ids: frozenset[uuid.UUID] = frozenset()
     _events: list[PendingEvent] = field(default_factory=list)
+
+    @property
+    def is_ai_agent(self) -> bool:
+        """An AI agent is acting: anything over MCP, or an identity with the automation role.
+
+        People who object to automated processing are hidden from these callers.
+        """
+        return self.meta.channel == "mcp" or Role.AUTOMATION.value in self.principal.roles
 
     def can(self, permission: Permission) -> bool:
         return self.principal.can(permission)

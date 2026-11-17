@@ -661,3 +661,10 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 /* Status and priority share a column: the state, then how pressing it is. */
 .state-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .state-cell .priority { font-size: 12.5px; }
+
+/* Saved replies and merging */
+.composer-templates { max-width: 220px; font-size: 13px; }
+.template-body { white-space: pre-wrap; color: var(--muted); margin: 0; }
+.form-actions-left { display: flex; gap: 8px; }
+.merge summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
+.merge[open] summary { margin-bottom: 10px; }

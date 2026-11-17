@@ -17,6 +17,7 @@ from zentral.schemas import (
     ContactLookup,
     ContactOut,
     ErasureOut,
+    ObjectionIn,
 )
 from zentral.security.rbac import Permission
 from zentral.services import privacy
@@ -95,5 +96,12 @@ async def export_contact(ctx: CtxDep, contact_id: uuid.UUID) -> dict[str, Any]:
 @router.post("/privacy/contacts/{contact_id}/erase")
 async def erase_contact(ctx: CtxDep, contact_id: uuid.UUID) -> ErasureOut:
     result = await privacy.erase_contact(ctx, contact_id)
+    await ctx.commit()
+    return result
+
+
+@router.put("/privacy/contacts/{contact_id}/ai-objection")
+async def set_ai_objection(ctx: CtxDep, contact_id: uuid.UUID, data: ObjectionIn) -> ContactOut:
+    result = await privacy.set_ai_objection(ctx, contact_id, objected=data.objected)
     await ctx.commit()
     return result

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelName, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
+import { channelName, fillTemplate, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
 
 describe("parseRoute", () => {
   it("parses known routes", () => {
@@ -117,5 +117,18 @@ describe("schema-driven forms", () => {
   });
   it("parses comma and newline separated lists", () => {
     expect(parseList(" a.com, b.org\n\n c.net ,")).toEqual(["a.com", "b.org", "c.net"]);
+  });
+});
+
+describe("fillTemplate", () => {
+  it("replaces every placeholder, with safe fallbacks", () => {
+    const body = "Hi {requester_first_name}, {ticket_key} is fixed. {ticket_key}! — {agent_name} {unknown}";
+    expect(fillTemplate(body, { ticketKey: "ZEN-4", requester: "Jane", agent: "Ola" })).toBe(
+      "Hi Jane, ZEN-4 is fixed. ZEN-4! — Ola {unknown}",
+    );
+    expect(fillTemplate("Hi {requester_first_name}, {agent_name}", { ticketKey: "ZEN-4" })).toBe("Hi there, The service desk");
+  });
+  it("does not interpret replacement patterns", () => {
+    expect(fillTemplate("{ticket_key}", { ticketKey: "$&$1" })).toBe("$&$1");
   });
 });

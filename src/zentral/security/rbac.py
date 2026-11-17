@@ -32,9 +32,13 @@ class Permission(StrEnum):
     SYSTEM_MANAGE = "system:manage"
     SOURCE_MANAGE = "source:manage"
     RULE_MANAGE = "rule:manage"
+    # Maintain the saved replies agents start from.
+    TEMPLATE_MANAGE = "template:manage"
     AUDIT_READ = "audit:read"
     PRIVACY_EXPORT = "privacy:export"
     PRIVACY_ERASE = "privacy:erase"
+    # Record or withdraw a person's objection to automated (AI) processing.
+    PRIVACY_RESTRICT = "privacy:restrict"
     INGEST_WRITE = "ingest:write"
 
 
@@ -70,6 +74,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.SYSTEM_MANAGE,
             P.SOURCE_MANAGE,
             P.RULE_MANAGE,
+            P.TEMPLATE_MANAGE,
             P.AUDIT_READ,
         }
     ),
@@ -96,6 +101,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             P.TICKET_TRIAGE,
             P.PRIVACY_EXPORT,
             P.PRIVACY_ERASE,
+            P.PRIVACY_RESTRICT,
             P.AUDIT_READ,
         }
     ),

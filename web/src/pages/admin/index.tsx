@@ -5,6 +5,7 @@ import { Channels } from "./Channels";
 import { Rules } from "./Rules";
 import { Systems } from "./Systems";
 import { Teams } from "./Teams";
+import { Templates } from "./Templates";
 
 export function AdminPage() {
   const { can } = useApp();
@@ -13,6 +14,7 @@ export function AdminPage() {
     { id: "systems", label: "Systems", allowed: can("system:manage"), view: <Systems /> },
     { id: "channels", label: "Channels", allowed: can("source:manage"), view: <Channels /> },
     { id: "rules", label: "Automation", allowed: can("rule:manage"), view: <Rules /> },
+    { id: "templates", label: "Saved replies", allowed: can("template:manage"), view: <Templates /> },
   ].filter((t) => t.allowed);
   const [active, setActive] = useState(tabs[0]?.id);
   return (

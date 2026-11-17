@@ -78,6 +78,11 @@ class TicketOut(Out):
     first_response_at: datetime | None = None
     resolve_due_at: datetime | None = None
     resolve_state: str = "none"
+    # Set when this ticket was folded into another one.
+    merged_into_id: int | None = None
+    merged_into_key: str | None = None
+    # The requester objected to automated analysis: no AI triage, hidden from AI agents.
+    ai_excluded: bool = False
     pii_redacted: bool
 
 
@@ -170,6 +175,34 @@ class TicketUpdate(In):
 class MessageCreate(In):
     kind: Literal["outbound", "note"]
     body: Body
+
+
+class MergeIn(In):
+    into_ticket_id: int = Field(ge=1)
+
+
+# --- saved replies ----------------------------------------------------------------
+
+
+class TemplateIn(In):
+    name: Short
+    body: Annotated[str, StringConstraints(min_length=1, max_length=20_000)]
+    team_id: uuid.UUID | None = None
+
+
+class TemplateUpdate(In):
+    name: Short | None = None
+    body: Annotated[str, StringConstraints(min_length=1, max_length=20_000)] | None = None
+    team_id: uuid.UUID | None = None
+
+
+class TemplateOut(Out):
+    id: uuid.UUID
+    name: str
+    body: str
+    team_id: uuid.UUID | None
+    team_name: str | None
+    updated_at: datetime
 
 
 # --- administration ------------------------------------------------------------
@@ -346,7 +379,12 @@ class ContactOut(Out):
     display_name: str | None
     created_at: datetime
     erased_at: datetime | None
+    ai_objected_at: datetime | None
     ticket_count: int
+
+
+class ObjectionIn(In):
+    objected: bool
 
 
 class ErasureOut(Out):

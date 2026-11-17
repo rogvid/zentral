@@ -48,7 +48,7 @@ const NAV: { page: Route["page"]; href: string; label: string; icon: ReactNode; 
     href: "#/admin",
     label: "Administration",
     icon: <SettingsIcon />,
-    needs: ["team:manage", "system:manage", "source:manage", "rule:manage"],
+    needs: ["team:manage", "system:manage", "source:manage", "rule:manage", "template:manage"],
   },
 ];
 

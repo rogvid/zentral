@@ -37,6 +37,7 @@ async def _contact_out(ctx: Ctx, contact: Contact) -> ContactOut:
         display_name=contact.display_name,
         created_at=contact.created_at,
         erased_at=contact.erased_at,
+        ai_objected_at=contact.ai_objected_at,
         ticket_count=count or 0,
     )
 
@@ -108,9 +109,31 @@ async def export_contact(ctx: Ctx, contact_id: uuid.UUID) -> dict[str, Any]:
             "email": contact.email,
             "display_name": contact.display_name,
             "first_seen": contact.created_at.isoformat(),
+            "objected_to_ai_processing": contact.ai_objected_at.isoformat()
+            if contact.ai_objected_at
+            else None,
         },
         "tickets": exported,
     }
+
+
+async def set_ai_objection(ctx: Ctx, contact_id: uuid.UUID, *, objected: bool) -> ContactOut:
+    """Record (or withdraw) a person's objection to automated analysis (Art. 21).
+
+    While it stands, none of their tickets is sent to a model — including ones
+    still waiting for triage — and AI agents cannot see them.
+    """
+    ctx.require(P.PRIVACY_RESTRICT, "contact", str(contact_id))
+    contact = await ctx.session.get(Contact, contact_id)
+    if contact is None or contact.erased_at is not None:
+        raise NotFound("contact")
+    if objected and contact.ai_objected_at is None:
+        contact.ai_objected_at = utcnow()
+        ctx.audit("privacy.ai_objection_recorded", "contact", contact.id)
+    elif not objected and contact.ai_objected_at is not None:
+        contact.ai_objected_at = None
+        ctx.audit("privacy.ai_objection_withdrawn", "contact", contact.id)
+    return await _contact_out(ctx, contact)
 
 
 async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:

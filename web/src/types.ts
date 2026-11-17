@@ -61,6 +61,9 @@ export interface Ticket {
   first_response_at: string | null;
   resolve_due_at: string | null;
   resolve_state: TargetState;
+  merged_into_id: number | null;
+  merged_into_key: string | null;
+  ai_excluded: boolean;
   pii_redacted: boolean;
 }
 
@@ -197,5 +200,15 @@ export interface Contact {
   display_name: string | null;
   created_at: string;
   erased_at: string | null;
+  ai_objected_at: string | null;
   ticket_count: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  body: string;
+  team_id: string | null;
+  team_name: string | null;
+  updated_at: string;
 }

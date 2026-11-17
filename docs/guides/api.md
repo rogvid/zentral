@@ -34,6 +34,7 @@ GET    /tickets/{id}
 PATCH  /tickets/{id}
 GET    /tickets/{id}/messages
 POST   /tickets/{id}/messages
+POST   /tickets/{id}/merge          {"into_ticket_id": 12}
 ```
 
 List filters: `status` (repeatable), `priority`, `category`, `team_id`,

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true
+from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true, update
 
 from zentral.db.models import (
     AuditEvent,
@@ -74,18 +74,32 @@ def visible_clause(ctx: Ctx) -> ColumnElement[bool]:
     """SQL predicate selecting the tickets the caller is allowed to see."""
     if not ctx.can(P.TICKET_READ):
         return false()
+    scope: ColumnElement[bool]
     if ctx.can(P.TICKET_READ_ALL):
-        return true()
-    clauses: list[ColumnElement[bool]] = [Ticket.assignee_id == ctx.principal.subject]
-    if ctx.team_ids:
-        clauses.append(Ticket.team_id.in_(ctx.team_ids))
-    if ctx.can(P.TICKET_TRIAGE):
-        clauses.append(Ticket.team_id.is_(None))
-    return or_(*clauses)
+        scope = true()
+    else:
+        clauses: list[ColumnElement[bool]] = [Ticket.assignee_id == ctx.principal.subject]
+        if ctx.team_ids:
+            clauses.append(Ticket.team_id.in_(ctx.team_ids))
+        if ctx.can(P.TICKET_TRIAGE):
+            clauses.append(Ticket.team_id.is_(None))
+        scope = or_(*clauses)
+    if ctx.is_ai_agent:
+        objected = select(Contact.id).where(Contact.ai_objected_at.is_not(None))
+        scope = and_(
+            scope, or_(Ticket.requester_id.is_(None), Ticket.requester_id.not_in(objected))
+        )
+    return scope
+
+
+def ai_excluded(ticket: Ticket) -> bool:
+    return ticket.requester is not None and ticket.requester.ai_objected_at is not None
 
 
 def is_visible(ctx: Ctx, ticket: Ticket) -> bool:
     if not ctx.can(P.TICKET_READ):
+        return False
+    if ctx.is_ai_agent and ai_excluded(ticket):
         return False
     if ctx.can(P.TICKET_READ_ALL) or ticket.assignee_id == ctx.principal.subject:
         return True
@@ -167,6 +181,9 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         first_response_at=ticket.first_response_at,
         resolve_due_at=resolve.due_at,
         resolve_state=resolve.state,
+        merged_into_id=ticket.merged_into_id,
+        merged_into_key=ticket_key(ctx, ticket.merged_into_id) if ticket.merged_into_id else None,
+        ai_excluded=ai_excluded(ticket),
         pii_redacted=not pii,
     )
 
@@ -338,6 +355,9 @@ ACTIVITY_ACTIONS = (
     "ticket.replied",
     "ticket.acknowledged",
     "ticket.auto_closed",
+    "ticket.merged",
+    "ticket.merge_received",
+    "ticket.classification_skipped",
     "message.delivered",
     "message.delivery_failed",
 )
@@ -594,3 +614,88 @@ async def auto_close(ctx: Ctx, *, batch: int = 500) -> int:
         ticket.status = TicketStatus.CLOSED
         ctx.audit("ticket.auto_closed", "ticket", ticket.id, after_days=days)
     return len(tickets)
+
+
+MAX_MERGE_HOPS = 5
+
+
+async def follow_merges(ctx: Ctx, ticket: Ticket) -> Ticket:
+    """The ticket a merged ticket now lives on (bounded, in case of a cycle)."""
+    for _ in range(MAX_MERGE_HOPS):
+        if ticket.merged_into_id is None:
+            return ticket
+        target = await ctx.session.get(Ticket, ticket.merged_into_id)
+        if target is None:
+            return ticket
+        ticket = target
+    return ticket
+
+
+async def merge_ticket(ctx: Ctx, source_id: int, target_id: int) -> TicketOut:
+    """Fold a duplicate into another ticket.
+
+    The conversation moves to the target, the duplicate is closed and points at
+    it, and later replies on the duplicate's thread land on the target. Only
+    tickets from the same requester can be merged: merging two people's
+    requests would put one person's words on the other's ticket and send
+    replies to only one of them.
+    """
+    if source_id == target_id:
+        raise ValidationFailed("a ticket cannot be merged into itself")
+    source = await load_ticket(ctx, source_id)
+    target = await load_ticket(ctx, target_id)
+    ctx.require(P.TICKET_UPDATE, "ticket", str(source_id))
+    if source.merged_into_id is not None:
+        raise ValidationFailed("this ticket has already been merged")
+    if target.merged_into_id is not None:
+        raise ValidationFailed(
+            "the target ticket was itself merged; merge into the ticket it points to"
+        )
+    if source.scrubbed_at is not None or target.scrubbed_at is not None:
+        raise ValidationFailed("a ticket scrubbed under the retention policy cannot be merged")
+    if target.status == TicketStatus.CLOSED:
+        raise ValidationFailed("the target ticket is closed")
+    if source.requester_id is not None and source.requester_id != target.requester_id:
+        raise ValidationFailed("only tickets from the same requester can be merged")
+
+    moved = await ctx.session.execute(
+        update(Message).where(Message.ticket_id == source.id).values(ticket_id=target.id)
+    )
+    count = int(getattr(moved, "rowcount", 0) or 0)
+    source_key, target_key = ticket_key(ctx, source.id), ticket_key(ctx, target.id)
+    ctx.session.add(
+        Message(
+            ticket_id=target.id,
+            kind=MessageKind.NOTE,
+            body=f"{source_key} was merged into this ticket ({count} messages moved).",
+            author_user_id=ctx.principal.subject,
+        )
+    )
+    ctx.session.add(
+        Message(
+            ticket_id=source.id,
+            kind=MessageKind.NOTE,
+            body=f"Merged into {target_key}. The conversation continues there.",
+            author_user_id=ctx.principal.subject,
+        )
+    )
+    target.tags = sorted(set(target.tags or []) | set(source.tags or []))
+    if source.first_response_at and not target.first_response_at:
+        target.first_response_at = source.first_response_at
+    if target.status in (TicketStatus.RESOLVED, TicketStatus.PENDING):
+        sla.status_changed(target, target.status, TicketStatus.OPEN, ctx.settings)
+        target.status = TicketStatus.OPEN
+        target.resolved_at = None
+    target.updated_at = utcnow()
+
+    sla.status_changed(source, source.status, TicketStatus.CLOSED, ctx.settings)
+    source.status = TicketStatus.CLOSED
+    source.resolved_at = source.resolved_at or utcnow()
+    source.merged_into_id = target.id
+    source.updated_at = utcnow()
+
+    ctx.audit("ticket.merged", "ticket", source.id, into=target.id, messages=count)
+    ctx.audit("ticket.merge_received", "ticket", target.id, source=source.id, messages=count)
+    await ctx.session.flush()
+    await ctx.session.refresh(target, ["team", "system"])
+    return await present_ticket(ctx, target)

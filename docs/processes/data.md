@@ -65,11 +65,13 @@ Insights, or — with an on-prem model — outside your network.
 
 ```mermaid
 flowchart TD
-    Q["Person asks: what do you hold? / delete it"] --> L["Log the request, start the one-month clock"]
+    Q["Person asks: what do you hold? /<br/>delete it / no AI on my data"] --> L["Log the request, start the one-month clock"]
     L --> V{"Identity verified?"}
     V -- no --> VQ["Verify proportionately"] --> V
     V -- yes --> F["Privacy officer looks the person up<br/>(audited, even a miss)"]
-    F --> K{"Access or erasure?"}
+    F --> K{"Access, erasure<br/>or objection?"}
+    K -- objection --> OB["Record objection:<br/>no model sees their tickets,<br/>AI agents cannot see them"]
+    OB --> A
     K -- access --> E["Export JSON:<br/>identity, tickets, messages<br/>(notes reviewed separately)"]
     K -- erasure --> G{"Grounds to keep?<br/>legal obligation, claims"}
     G -- yes --> W["Explain and keep"]

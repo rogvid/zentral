@@ -36,7 +36,7 @@ from zentral.runtime import Runtime
 from zentral.schemas import MessageCreate, TicketCreate, TicketUpdate
 from zentral.security.principal import Principal
 from zentral.security.tokens import AuthenticationError, Authenticator
-from zentral.services import admin, insights, tickets
+from zentral.services import admin, insights, templates, tickets
 from zentral.services.context import Ctx, record_denied, resolve_team_ids, touch_user
 from zentral.services.errors import DomainError, NotFound, PermissionDenied
 from zentral.services.tickets import TicketFilter
@@ -262,6 +262,26 @@ def build_mcp(runtime: Runtime, validator: Authenticator, limiter: RateLimiter) 
                 ctx, ticket_id, MessageCreate(kind="outbound", body=body)
             )
             return message.model_dump(mode="json")
+
+    @mcp.tool()
+    async def merge_tickets(duplicate_ticket_id: int, into_ticket_id: int) -> dict[str, Any]:
+        """Fold a duplicate ticket into another from the same requester.
+
+        The conversation moves to the target ticket and the duplicate is closed.
+        Returns the target ticket.
+        """
+        async with tool_ctx() as ctx:
+            merged = await tickets.merge_ticket(ctx, duplicate_ticket_id, into_ticket_id)
+            return merged.model_dump(mode="json")
+
+    @mcp.tool()
+    async def list_saved_replies() -> list[dict[str, Any]]:
+        """Saved replies you may start from. Adapt them; never send one unread."""
+        async with tool_ctx() as ctx:
+            return [
+                {"name": t.name, "body": t.body, "team": t.team_name}
+                for t in await templates.list_templates(ctx)
+            ]
 
     @mcp.tool()
     async def list_teams() -> list[dict[str, Any]]:

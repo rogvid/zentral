@@ -49,6 +49,14 @@ applied.
 - **Activity** shows what happened to the ticket and who did it — changes,
   notes, replies, AI triage. It does not show who merely looked.
 
+- **Saved replies**: pick one from *Saved replies…* under the composer. It is
+  filled in with the requester's first name, the ticket key and your name, and
+  you can edit it before sending — nothing is sent until you press send.
+- **Merge a duplicate**: on the duplicate, open *Merge a duplicate* and enter
+  the key of the ticket to keep. The conversation moves there and the duplicate
+  closes; later replies to it land on the kept ticket. Only tickets from the
+  same requester can be merged, and it cannot be undone.
+
 Handy to know: ++ctrl+enter++ sends. Text you have not sent yet is kept while
 you look at another ticket (in memory only — it is gone when you close the
 tab). When the queue changes while you are in the inbox, a banner offers the

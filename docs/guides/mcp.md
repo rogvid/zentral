@@ -27,8 +27,13 @@ no separate permission system.
 | `update_ticket` | Status, priority, category, tags, system, team; assignee | `ticket:update` (`ticket:assign` for assignee) |
 | `add_note` | Internal note | `ticket:note` |
 | `reply_to_requester` | Send a message to the requester | `ticket:reply` |
+| `merge_tickets` | Fold a duplicate into a ticket from the same requester | `ticket:update` |
+| `list_saved_replies` | Saved replies to start from | `ticket:reply` or `ticket:note` |
 | `get_insights` | Aggregates for the last N days: volumes, medians, targets met, breakdowns | `ticket:read` |
 | `list_teams`, `list_systems`, `list_categories` | Reference data | `ticket:read` |
+
+Tickets of people who [objected to AI processing](privacy-officer.md#objection-to-ai-processing-art-21)
+are invisible over MCP, whatever role the agent has.
 
 ## Give the agent the least it needs
 

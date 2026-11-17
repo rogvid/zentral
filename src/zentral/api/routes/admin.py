@@ -19,10 +19,13 @@ from zentral.schemas import (
     TeamIn,
     TeamMemberIn,
     TeamOut,
+    TemplateIn,
+    TemplateOut,
+    TemplateUpdate,
     UserOut,
 )
 from zentral.security.rbac import Permission
-from zentral.services import admin
+from zentral.services import admin, templates
 
 router = APIRouter(tags=["administration"])
 
@@ -157,4 +160,32 @@ async def update_rule(ctx: CtxDep, rule_id: uuid.UUID, data: RuleIn) -> RuleOut:
 @router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(ctx: CtxDep, rule_id: uuid.UUID) -> None:
     await admin.delete_rule(ctx, rule_id)
+    await ctx.commit()
+
+
+# --- saved replies ------------------------------------------------------------------
+
+
+@router.get("/templates")
+async def list_templates(ctx: CtxDep) -> list[TemplateOut]:
+    return await templates.list_templates(ctx)
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def create_template(ctx: CtxDep, data: TemplateIn) -> TemplateOut:
+    out = await templates.create_template(ctx, data)
+    await ctx.commit()
+    return out
+
+
+@router.patch("/templates/{template_id}")
+async def update_template(ctx: CtxDep, template_id: uuid.UUID, data: TemplateUpdate) -> TemplateOut:
+    out = await templates.update_template(ctx, template_id, data)
+    await ctx.commit()
+    return out
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(ctx: CtxDep, template_id: uuid.UUID) -> None:
+    await templates.delete_template(ctx, template_id)
     await ctx.commit()

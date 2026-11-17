@@ -55,11 +55,11 @@ test dumps the whole trail and asserts this. Example:
 
 | Area | Actions |
 |---|---|
-| Tickets | `ticket.created`, `ticket.ingested`, `ticket.message_received`, `ticket.read`, `ticket.list`, `ticket.messages.read`, `ticket.updated`, `ticket.note_added`, `ticket.replied`, `ticket.acknowledged`, `ticket.auto_closed` |
+| Tickets | `ticket.created`, `ticket.ingested`, `ticket.message_received`, `ticket.read`, `ticket.list`, `ticket.messages.read`, `ticket.updated`, `ticket.note_added`, `ticket.replied`, `ticket.acknowledged`, `ticket.auto_closed`, `ticket.merged`, `ticket.merge_received` |
 | Delivery | `message.delivered`, `message.delivery_failed` |
-| AI | `ticket.classified`, `automation.rule_applied` |
-| Privacy | `privacy.contact_lookup`, `privacy.exported`, `privacy.erased`, `retention.ticket_scrubbed`, `retention.contact_erased`, `contact.created` |
-| Administration | `team.created`, `team.deleted`, `team.member_added`, `team.member_removed`, `system.created`, `system.updated`, `system.deleted`, `source.created`, `source.updated`, `source.tested`, `source.failing`, `source.token_rotated`, `source.deleted`, `rule.created`, `rule.updated`, `rule.deleted` |
+| AI | `ticket.classified`, `ticket.classification_skipped`, `automation.rule_applied` |
+| Privacy | `privacy.contact_lookup`, `privacy.exported`, `privacy.erased`, `privacy.ai_objection_recorded`, `privacy.ai_objection_withdrawn`, `retention.ticket_scrubbed`, `retention.contact_erased`, `contact.created` |
+| Administration | `team.created`, `team.deleted`, `team.member_added`, `team.member_removed`, `system.created`, `system.updated`, `system.deleted`, `source.created`, `source.updated`, `source.tested`, `source.failing`, `source.token_rotated`, `source.deleted`, `rule.created`, `rule.updated`, `rule.deleted`, `template.created`, `template.updated`, `template.deleted` |
 | Access control | `access.denied` |
 | Audit | `audit.read`, `audit.verified` |
 

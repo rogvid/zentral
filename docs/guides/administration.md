@@ -71,6 +71,21 @@ ticket. Rules can only route and label.
     If a system has an **owning team**, tickets about it go there automatically
     when no team was set — you often do not need a rule at all.
 
+## Saved replies
+
+*Administration → Saved replies* holds the answers your desk gives every week.
+A reply is offered to everyone, or only to one team's members. These
+placeholders are filled in when an agent inserts it:
+
+| Placeholder | Becomes |
+|---|---|
+| `{requester_first_name}` | The requester's first name ("there" when unknown or masked) |
+| `{ticket_key}` | The ticket key, e.g. `ZEN-42` |
+| `{agent_name}` | The agent's name |
+
+Replies are encrypted at rest like ticket content. Keep personal data out of
+them — they are shared text.
+
 ## Settings that live in configuration
 
 Categories, service-level targets (`ZENTRAL_SLA_RESPONSE_HOURS`,

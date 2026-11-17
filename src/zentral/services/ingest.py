@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from zentral.connectors.base import InboundMessage
@@ -28,7 +28,12 @@ from zentral.db.models import (
 from zentral.security.crypto import get_cipher
 from zentral.services import sla
 from zentral.services.context import Ctx
-from zentral.services.tickets import apply_system, get_or_create_contact, ticket_key
+from zentral.services.tickets import (
+    apply_system,
+    follow_merges,
+    get_or_create_contact,
+    ticket_key,
+)
 from zentral.text import clean_text, single_line
 
 
@@ -193,24 +198,30 @@ async def _find_thread(
     match = re.search(rf"\[{re.escape(ctx.settings.ticket_prefix)}-(\d{{1,12}})\]", subject)
     if match and contact_id is not None:
         ticket = await ctx.session.get(Ticket, int(match.group(1)))
-        if (
-            ticket is not None
-            and ticket.requester_id == contact_id
-            and ticket.status != TicketStatus.CLOSED
-            and ticket.scrubbed_at is None
-        ):
-            return ticket
-    # 2. Same external conversation on the same (authenticated) source.
+        if ticket is not None and ticket.requester_id == contact_id:
+            ticket = await follow_merges(ctx, ticket)
+            if ticket.requester_id == contact_id and _open(ticket):
+                return ticket
+    # 2. Same external conversation on the same (authenticated) source. A
+    #    merged ticket is closed, but its thread still leads to where it went.
     if thread_hash:
-        return await ctx.session.scalar(
+        ticket = await ctx.session.scalar(
             select(Ticket)
             .where(
                 Ticket.source_id == source.id,
                 Ticket.external_thread_id == thread_hash,
-                Ticket.status != TicketStatus.CLOSED,
+                or_(Ticket.status != TicketStatus.CLOSED, Ticket.merged_into_id.is_not(None)),
                 Ticket.scrubbed_at.is_(None),
             )
             .order_by(Ticket.id.desc())
             .limit(1)
         )
+        if ticket is not None:
+            ticket = await follow_merges(ctx, ticket)
+            if _open(ticket):
+                return ticket
     return None
+
+
+def _open(ticket: Ticket) -> bool:
+    return ticket.status != TicketStatus.CLOSED and ticket.scrubbed_at is None

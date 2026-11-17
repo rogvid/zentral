@@ -103,6 +103,14 @@ await as(browser, "agent", async (page) => {
   check((await page.evaluate(() => JSON.stringify(sessionStorage) + JSON.stringify(localStorage))).includes("half-written") === false, "draft leaked into browser storage");
   await page.getByLabel("Internal note").fill("");
 
+  // A saved reply fills in the ticket's details and stays editable before sending.
+  const signInKey = (await page.locator(".ticket-key").innerText()).trim();
+  await page.getByRole("tab", { name: "Reply to requester" }).click();
+  await page.getByLabel("Insert a saved reply").selectOption({ label: "Account unlocked" });
+  const filled = await page.getByLabel("Reply", { exact: true }).inputValue();
+  check(filled.includes(signInKey) && filled.startsWith("Hi Jane,") && !filled.includes("{"), `saved reply placeholders filled (got ${JSON.stringify(filled.slice(0, 60))})`);
+  await page.getByLabel("Reply", { exact: true }).fill("");
+
   await page.getByLabel("Add a tag").fill("vip-customer");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await page.locator(".tags .chip", { hasText: "vip-customer" }).waitFor();
@@ -118,6 +126,14 @@ await as(browser, "agent", async (page) => {
   await page.getByLabel("Description").fill("Paper jam in tray 2, printer shows error E-204.");
   await page.getByRole("button", { name: "Create ticket" }).click();
   await page.getByRole("heading", { name: "Printer on 3rd floor is jammed" }).waitFor();
+
+  // Merge it into another ticket: the duplicate closes and points to where it went.
+  await page.getByText("Merge a duplicate").click();
+  await page.getByLabel("Ticket to merge into").fill(signInKey);
+  await page.locator(".merge").getByRole("button", { name: "Merge" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Merge" }).click();
+  await page.locator(".ticket-key", { hasText: signInKey }).waitFor();
+  await page.locator(".thread .msg-body", { hasText: "was merged into this ticket" }).waitFor();
 
   // Role boundaries are visible in the UI…
   await go(page, "admin");
@@ -202,6 +218,12 @@ await as(browser, "admin", async (page) => {
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await card.waitFor({ state: "detached" });
 
+  await page.getByRole("tab", { name: "Saved replies" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Thanks for waiting");
+  await page.getByLabel("Text").fill("Hi {requester_first_name}, thanks for your patience with {ticket_key}.");
+  await page.getByRole("button", { name: "Add saved reply" }).click();
+  await page.locator(".card", { hasText: "Thanks for waiting" }).getByRole("button", { name: "Edit" }).waitFor();
+
   await page.getByRole("tab", { name: "Automation" }).click();
   const rule = page.locator(".card", { hasText: "Infrastructure alerts" });
   await rule.getByRole("button", { name: "Turn off" }).click();
@@ -249,6 +271,11 @@ await as(browser, "privacy", async (page) => {
   await page.getByRole("button", { name: /Export data/ }).waitFor();
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /Export data/ }).click()]);
   check(download.suggestedFilename().startsWith("data-subject-export-"), "export file name");
+
+  await page.getByRole("button", { name: "Record objection to AI processing" }).click();
+  await page.getByText(/excluded from AI triage/).waitFor();
+  await page.getByRole("button", { name: "Withdraw AI objection" }).click();
+  await page.getByText(/Allowed \(personal data is masked first\)/).waitFor();
 
   await page.getByRole("button", { name: /Erase personal data/ }).click();
   const confirm = page.getByRole("dialog").getByRole("button", { name: "Erase permanently" });

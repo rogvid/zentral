@@ -44,9 +44,11 @@ truth, and CI fails if this table is out of date.
 | `system:manage` | Manage the systems catalogue | ✓ |  |  |  |  |  |  |
 | `source:manage` | Manage channels and their secrets | ✓ |  |  |  |  |  |  |
 | `rule:manage` | Manage automation rules | ✓ |  |  |  |  |  |  |
+| `template:manage` | Manage saved replies | ✓ |  |  |  |  |  |  |
 | `audit:read` | Read and verify the audit trail | ✓ |  |  | ✓ | ✓ |  |  |
 | `privacy:export` | Look up a person and export their data |  |  |  |  | ✓ |  |  |
 | `privacy:erase` | Erase a person's data |  |  |  |  | ✓ |  |  |
+| `privacy:restrict` | Record an objection to AI processing |  |  |  |  | ✓ |  |  |
 | `ingest:write` | Submit issues as a service |  |  |  |  |  |  | ✓ |
 <!-- END GENERATED -->
 

@@ -153,6 +153,33 @@ def main() -> None:
         ):
             http.post("/api/v1/rules", headers=admin, json=rule)
 
+        for name, body, team in (
+            (
+                "Account unlocked",
+                "Hi {requester_first_name},\n\nI have unlocked your account. If it locks "
+                "again, update the saved password on your phone too.\n\nReference: "
+                "{ticket_key}\n\nBest regards,\n{agent_name}",
+                None,
+            ),
+            (
+                "Need more information",
+                "Hi {requester_first_name},\n\nTo look into this, could you tell us when it "
+                "started and send the exact error message?\n\n{agent_name}",
+                None,
+            ),
+            (
+                "Scheduled maintenance",
+                "Hi {requester_first_name},\n\nThis was caused by planned maintenance, which "
+                "has now finished. Let us know if it still happens.\n\n{agent_name}",
+                "Infrastructure",
+            ),
+        ):
+            http.post(
+                "/api/v1/templates",
+                headers=admin,
+                json={"name": name, "body": body, "team_id": teams[team] if team else None},
+            )
+
         r = http.post(
             "/api/v1/sources",
             headers=admin,

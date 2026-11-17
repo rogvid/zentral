@@ -94,6 +94,23 @@ The grace period is `ZENTRAL_AUTO_CLOSE_DAYS` (default 7; 0 turns automatic
 closing off). It runs with the six-hourly housekeeping job, together with
 [retention](data.md#retention).
 
+## Duplicates
+
+When the same person raises the same problem twice, an agent (or an AI agent)
+merges the duplicate into the ticket to keep:
+
+```mermaid
+flowchart LR
+    D["Duplicate ticket"] -- "merge" --> K["Ticket kept"]
+    D --> X["Closed, points to the kept ticket<br/>(ticket.merged)"]
+    K --> M["Gains the duplicate's messages and tags;<br/>reopens if it was resolved<br/>(ticket.merge_received)"]
+    R["Requester replies on<br/>the duplicate's thread"] --> K
+```
+
+Only tickets from the **same requester** (or a duplicate with no requester) can
+be merged: merging two people's tickets would put one person's words on the
+other's ticket and send replies to only one of them. Merging cannot be undone.
+
 ## Who owns a ticket
 
 | Phase | Owner | Can see it |

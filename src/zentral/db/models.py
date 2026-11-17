@@ -137,6 +137,9 @@ class Contact(Base):
     display_name: Mapped[str | None] = mapped_column(EncryptedText)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     erased_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # The person objected to automated analysis (GDPR Art. 21): their tickets
+    # are never sent to a model and are hidden from AI agents.
+    ai_objected_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class IngestSource(Base):
@@ -213,6 +216,11 @@ class Ticket(Base):
     paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     paused_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
+    # Set when this ticket was folded into another; replies follow it there.
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tickets.id", ondelete="SET NULL"), index=True
+    )
+
     requester: Mapped[Contact | None] = relationship(lazy="joined")
     team: Mapped[Team | None] = relationship(lazy="joined")
     system: Mapped[System | None] = relationship(lazy="joined")
@@ -244,6 +252,22 @@ class Message(Base):
     ticket: Mapped[Ticket] = relationship(back_populates="messages")
 
     __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_messages_dedupe"),)
+
+
+class ReplyTemplate(Base):
+    """A saved reply agents can start from. Global, or limited to one team."""
+
+    __tablename__ = "reply_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(EncryptedText)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 
 class AutomationRule(Base):

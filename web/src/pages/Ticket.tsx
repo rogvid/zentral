@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useApp, useLoad } from "../context";
-import { channelName, percent, relativeTime, titleCase, until } from "../lib";
-import type { Activity, Message, Priority, Status, SystemInfo, TargetState, Team, Ticket, User } from "../types";
+import { channelName, fillTemplate, percent, relativeTime, titleCase, until } from "../lib";
+import type { Activity, Message, Priority, Status, SystemInfo, TargetState, Team, Template, Ticket, User } from "../types";
 import { firstName } from "../brand";
 import { ChannelIcon, SparkIcon } from "../icons";
+import { useConfirm } from "../components/Confirm";
 import { Avatar, Chip, ErrorState, Field, PriorityMark, Spinner, StatusBadge } from "../ui";
 
 const STATUSES: Status[] = ["new", "open", "pending", "resolved", "closed"];
@@ -23,6 +24,9 @@ const ACTIVITY_TEXT: Record<string, string> = {
   "ticket.replied": "replied to the requester",
   "ticket.acknowledged": "Receipt acknowledged to the requester",
   "ticket.auto_closed": "Closed automatically after the grace period",
+  "ticket.merged": "merged this ticket into another",
+  "ticket.merge_received": "merged a duplicate into this ticket",
+  "ticket.classification_skipped": "AI triage skipped — the requester objected",
   "message.delivered": "Reply delivered",
   "message.delivery_failed": "Reply could not be delivered",
 };
@@ -49,7 +53,7 @@ function ActivityList({ ticketId, version }: { ticketId: number; version: string
       <h2>Activity</h2>
       <ol className="timeline">
         {activity.data.slice(0, 12).map((entry, index) => {
-          const personal = entry.actor_kind !== "system" && /^(created|changed|added|replied)/.test(describeActivity(entry));
+          const personal = entry.actor_kind !== "system" && /^(created|changed|added|replied|merged)/.test(describeActivity(entry));
           return (
             <li key={index}>
               <span>
@@ -109,6 +113,55 @@ function Targets({ ticket: t }: { ticket: Ticket }) {
   );
 }
 
+/** Fold this ticket into another one from the same requester. */
+function MergePanel({ ticket }: { ticket: Ticket }) {
+  const { api, notify } = useApp();
+  const confirm = useConfirm();
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const number = /^(?:[A-Za-z]+-)?(\d{1,12})$/.exec(target.trim())?.[1];
+
+  async function merge() {
+    if (!number) return;
+    const ok = await confirm({
+      title: `Merge ${ticket.key} into #${number}?`,
+      message:
+        "The conversation moves to the other ticket and this one is closed. Replies to this ticket's thread will land there. This cannot be undone.",
+      confirmLabel: "Merge",
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const merged = await api.post<Ticket>(`/tickets/${ticket.id}/merge`, { into_ticket_id: Number(number) });
+      notify(`Merged into ${merged.key}`);
+      window.location.hash = `#/tickets/${merged.id}`;
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Could not merge", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="card panel merge">
+      <summary>Merge a duplicate</summary>
+      <form
+        className="tag-add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void merge();
+        }}
+      >
+        <input value={target} maxLength={30} placeholder="Ticket to keep, e.g. ZEN-12" aria-label="Ticket to merge into" onChange={(e) => setTarget(e.target.value)} />
+        <button className="btn" disabled={!number || busy}>
+          Merge
+        </button>
+      </form>
+      <p className="muted small">Only tickets from the same requester. This ticket closes and points to the other.</p>
+    </details>
+  );
+}
+
 function Tags({ ticket, editable, onChange }: { ticket: Ticket; editable: boolean; onChange: (tags: string[]) => void }) {
   const [draft, setDraft] = useState("");
   const valid = /^[\w.-]{1,40}$/.test(draft);
@@ -149,8 +202,9 @@ function Tags({ ticket, editable, onChange }: { ticket: Ticket; editable: boolea
 }
 
 function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
-  const { api, can, notify } = useApp();
+  const { api, can, notify, me } = useApp();
   const canReply = can("ticket:reply") && ticket.requester !== null;
+  const templates = useLoad(() => api.get<Template[]>("/templates").catch(() => []), []);
   const canNote = can("ticket:note");
   const [kind, setKind] = useState<"outbound" | "note">(canReply ? "outbound" : "note");
   const [body, setBodyState] = useState(() => drafts.get(ticket.id) ?? "");
@@ -161,6 +215,14 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
     setBodyState(text);
     if (text) drafts.set(ticket.id, text);
     else drafts.delete(ticket.id);
+  }
+
+  function insertTemplate(id: string) {
+    const template = (templates.data ?? []).find((t) => t.id === id);
+    if (!template) return;
+    const requester = ticket.requester?.email ? firstName(ticket.requester.display_name) : null;
+    const text = fillTemplate(template.body, { ticketKey: ticket.key, requester, agent: me.display_name });
+    setBody(body.trim() ? `${body.trimEnd()}\n\n${text}` : text);
   }
 
   async function send() {
@@ -209,6 +271,22 @@ function Composer({ ticket, onSent }: { ticket: Ticket; onSent: () => void }) {
         }}
       />
       <div className="composer-foot">
+        {(templates.data ?? []).length > 0 && (
+          <select
+            className="composer-templates"
+            aria-label="Insert a saved reply"
+            value=""
+            onChange={(e) => insertTemplate(e.target.value)}
+          >
+            <option value="">Saved replies…</option>
+            {(templates.data ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {t.team_name ? ` · ${t.team_name}` : ""}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="muted">
           {kind === "outbound" ? "Leaves the organisation through the ticket's channel." : "Never leaves the service desk."} Ctrl+Enter to send.
         </span>
@@ -288,12 +366,18 @@ export function TicketPage({ id }: { id: number }) {
             <StatusBadge status={t.status} />
             <PriorityMark priority={t.priority} />
             {t.system_name ? <Chip tone="system">{t.system_name}</Chip> : <Chip tone="note">No system</Chip>}
+            {t.ai_excluded && <Chip tone="neutral">No AI — requester objected</Chip>}
             <span className="muted meta-inline">
               <ChannelIcon channel={t.channel} />
               opened {relativeTime(t.created_at)} via {channelName(t.channel)}
             </span>
           </div>
         </header>
+        {t.merged_into_id && (
+          <p className="info-banner">
+            Merged into <a href={`#/tickets/${t.merged_into_id}`}>{t.merged_into_key}</a>. The conversation continues there.
+          </p>
+        )}
         {t.pii_redacted && (
           <p className="info-banner">
             Personal data is masked for your role. Placeholders such as [EMAIL] replace identifiers.
@@ -306,13 +390,15 @@ export function TicketPage({ id }: { id: number }) {
         ) : (
           <Thread messages={messages.data} />
         )}
-        <Composer
-          ticket={t}
-          onSent={() => {
-            messages.reload();
-            ticket.reload();
-          }}
-        />
+        {!t.merged_into_id && (
+          <Composer
+            ticket={t}
+            onSent={() => {
+              messages.reload();
+              ticket.reload();
+            }}
+          />
+        )}
       </section>
 
       <aside className="ticket-side">
@@ -402,6 +488,8 @@ export function TicketPage({ id }: { id: number }) {
             <span className="muted">Internal ticket</span>
           )}
         </div>
+
+        {editable && !t.merged_into_id && t.status !== "closed" && <MergePanel ticket={t} />}
 
         <ActivityList ticketId={t.id} version={`${t.updated_at}:${messages.data?.length ?? 0}`} />
 

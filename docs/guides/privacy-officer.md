@@ -56,6 +56,21 @@ Before erasing, check whether you have a legal obligation or legitimate ground
 to keep the data (for example an ongoing dispute); the tool does not make that
 judgement for you.
 
+## Objection to AI processing (Art. 21)
+
+When a person objects to their requests being analysed automatically, find
+them and choose **Record objection to AI processing**. From that moment:
+
+- none of their tickets is sent to a model — including tickets still waiting
+  for triage. Deterministic routing rules written by your admins still apply,
+  so their requests still reach the right team;
+- AI agents (anything connecting over MCP, and identities with the
+  `Zentral.Automation` role) cannot see their tickets at all;
+- people on the desk see a "No AI — requester objected" label on the ticket.
+
+**Withdraw AI objection** undoes it for new work. Both are recorded in the audit
+trail, and the objection is included in the person's export.
+
 ## Rectification (Art. 16)
 
 There is no bulk tool. A person's name is taken from their messages; correct

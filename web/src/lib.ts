@@ -91,3 +91,17 @@ export function query(params: Record<string, string | number | boolean | undefin
   const text = search.toString();
   return text ? `?${text}` : "";
 }
+
+/**
+ * Fill a saved reply's placeholders. Plain string replacement only: a template
+ * is administrator text and must not be able to reach anything else.
+ */
+export function fillTemplate(body: string, values: { ticketKey: string; requester?: string | null; agent?: string | null }): string {
+  return body
+    .split("{ticket_key}")
+    .join(values.ticketKey)
+    .split("{requester_first_name}")
+    .join(values.requester || "there")
+    .split("{agent_name}")
+    .join(values.agent || "The service desk");
+}

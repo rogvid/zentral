@@ -33,9 +33,11 @@ PERMISSION_HELP = {
     Permission.SYSTEM_MANAGE: "Manage the systems catalogue",
     Permission.SOURCE_MANAGE: "Manage channels and their secrets",
     Permission.RULE_MANAGE: "Manage automation rules",
+    Permission.TEMPLATE_MANAGE: "Manage saved replies",
     Permission.AUDIT_READ: "Read and verify the audit trail",
     Permission.PRIVACY_EXPORT: "Look up a person and export their data",
     Permission.PRIVACY_ERASE: "Erase a person's data",
+    Permission.PRIVACY_RESTRICT: "Record an objection to AI processing",
     Permission.INGEST_WRITE: "Submit issues as a service",
 }
 

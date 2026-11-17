@@ -64,7 +64,14 @@ def _normalise(
 
 async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> None:
     ticket = await ctx.session.get(Ticket, ticket_id)
-    if ticket is None or ticket.scrubbed_at is not None:
+    if ticket is None or ticket.scrubbed_at is not None or ticket.merged_into_id is not None:
+        return
+    if ticket.requester is not None and ticket.requester.ai_objected_at is not None:
+        # The requester objected to automated analysis: no model sees this
+        # ticket. Deterministic routing rules configured by people still apply.
+        ctx.audit("ticket.classification_skipped", "ticket", ticket.id, reason="objection")
+        await apply_rules(ctx, ticket)
+        refresh_targets(ticket, ctx.settings)
         return
     first = await ctx.session.scalar(
         select(Message).where(Message.ticket_id == ticket_id).order_by(Message.created_at).limit(1)

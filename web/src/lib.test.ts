@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelName, fillTemplate, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
+import { channelName, fillTemplate, formatTargets, parseTargets, initials, parseRoute, percent, query, relativeTime, titleCase } from "./lib";
 
 describe("parseRoute", () => {
   it("parses known routes", () => {
@@ -130,5 +130,17 @@ describe("fillTemplate", () => {
   });
   it("does not interpret replacement patterns", () => {
     expect(fillTemplate("{ticket_key}", { ticketKey: "$&$1" })).toBe("$&$1");
+  });
+});
+
+describe("targets text", () => {
+  it("round-trips", () => {
+    const parsed = parseTargets(" urgent = 0.5, HIGH=4 ");
+    expect(parsed).toEqual({ urgent: 0.5, high: 4 });
+    expect(formatTargets(parsed ?? {})).toBe("urgent=0.5, high=4");
+    expect(parseTargets("")).toEqual({});
+  });
+  it("rejects nonsense", () => {
+    for (const bad of ["critical=1", "high=0", "high=-1", "high", "high=1x", "high=9000"]) expect(parseTargets(bad)).toBeNull();
   });
 });

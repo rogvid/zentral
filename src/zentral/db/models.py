@@ -122,6 +122,10 @@ class System(Base):
         ForeignKey("teams.id", ondelete="SET NULL")
     )
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Per-priority hours that replace the global targets for tickets about this
+    # system, e.g. {"urgent": 0.5}. Priorities not listed use the global value.
+    sla_response_hours: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    sla_resolve_hours: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 

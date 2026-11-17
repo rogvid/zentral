@@ -83,6 +83,7 @@ const TARGET_TEXT: Record<TargetState, string> = {
 
 /** The two promises on every ticket, and where they stand. */
 function Targets({ ticket: t }: { ticket: Ticket }) {
+  const { config } = useApp();
   const rows = [
     { label: "First reply", state: t.response_state, due: t.response_due_at, done: t.first_response_at },
     { label: "Resolution", state: t.resolve_state, due: t.resolve_due_at, done: t.resolved_at },
@@ -108,7 +109,13 @@ function Targets({ ticket: t }: { ticket: Ticket }) {
           </div>
         ))}
       </dl>
-      <p className="muted small">Set by priority. The resolution clock pauses while waiting on the requester.</p>
+      <p className="muted small">
+        Set by priority{t.system_name ? " and system" : ""}.{" "}
+        {t.target_clock === "business"
+          ? `Counted in working hours (${config.business_hours}, ${config.timezone}).`
+          : "Counted around the clock."}{" "}
+        The resolution clock pauses while waiting on the requester.
+      </p>
     </div>
   );
 }

@@ -12,6 +12,8 @@ export interface AppConfig {
   auth: AuthConfig;
   ticket_prefix: string;
   categories: string[];
+  business_hours: string;
+  timezone: string;
   require_system_to_resolve: boolean;
 }
 
@@ -61,6 +63,7 @@ export interface Ticket {
   first_response_at: string | null;
   resolve_due_at: string | null;
   resolve_state: TargetState;
+  target_clock: "business" | "24x7";
   merged_into_id: number | null;
   merged_into_key: string | null;
   ai_excluded: boolean;
@@ -120,6 +123,8 @@ export interface SystemInfo {
   keywords: string[];
   default_team_id: string | null;
   active: boolean;
+  sla_response_hours: Partial<Record<Priority, number>>;
+  sla_resolve_hours: Partial<Record<Priority, number>>;
 }
 
 export interface User {

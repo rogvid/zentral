@@ -105,3 +105,22 @@ export function fillTemplate(body: string, values: { ticketKey: string; requeste
     .split("{agent_name}")
     .join(values.agent || "The service desk");
 }
+
+/** "urgent=1, high=4" ⇄ {urgent: 1, high: 4} for per-system target overrides. */
+export function formatTargets(targets: Record<string, number>): string {
+  return Object.entries(targets)
+    .map(([priority, hours]) => `${priority}=${hours}`)
+    .join(", ");
+}
+
+export function parseTargets(text: string): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  for (const part of text.split(",").map((p) => p.trim()).filter(Boolean)) {
+    const match = /^(low|normal|high|urgent)\s*=\s*(\d+(?:\.\d+)?)$/i.exec(part);
+    if (!match) return null;
+    const hours = Number(match[2]);
+    if (!(hours > 0 && hours <= 8760)) return null;
+    out[(match[1] ?? "").toLowerCase()] = hours;
+  }
+  return out;
+}

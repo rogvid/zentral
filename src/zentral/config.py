@@ -12,11 +12,14 @@ way that would weaken security (fail closed, not open).
 from __future__ import annotations
 
 import json
+from datetime import date
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from zentral.services.calendar import CalendarError, WorkCalendar
 
 DEFAULT_CATEGORIES = (
     "incident",
@@ -81,12 +84,29 @@ class Settings(BaseSettings):
     ticket_prefix: str = "ZEN"
     # Governance: a ticket cannot be resolved or closed until it names the system it concerns.
     require_system_to_resolve: bool = False
-    # Service-level targets in calendar hours, per priority. Omit a priority for no target.
+    # Service-level targets in hours, per priority. Omit a priority for no target.
+    # Hours are working hours for priorities on the business calendar (below),
+    # and plain hours for priorities on 24x7. A system can override them.
     sla_response_hours: Annotated[dict[str, float], NoDecode, BeforeValidator(_mapping)] = Field(
         default_factory=lambda: {"urgent": 1.0, "high": 4.0, "normal": 8.0, "low": 24.0}
     )
     sla_resolve_hours: Annotated[dict[str, float], NoDecode, BeforeValidator(_mapping)] = Field(
         default_factory=lambda: {"urgent": 8.0, "high": 24.0, "normal": 72.0, "low": 168.0}
+    )
+    # Working hours, e.g. "mon-fri 08:00-17:00". Empty: the clock runs around the clock.
+    business_hours: str = Field(default="", max_length=500)
+    # IANA time zone the working hours and holidays are in, e.g. "Europe/Copenhagen".
+    timezone: str = "UTC"
+    # Public holidays (YYYY-MM-DD) on which the business clock stands still.
+    holidays: StrList = Field(default_factory=list)
+    # Which clock each priority runs on: "business" or "24x7".
+    sla_calendar: Annotated[dict[str, str], NoDecode, BeforeValidator(_mapping)] = Field(
+        default_factory=lambda: {
+            "urgent": "24x7",
+            "high": "business",
+            "normal": "business",
+            "low": "business",
+        }
     )
     # Resolved tickets close automatically after this many days without a reply (0 = never).
     auto_close_days: int = Field(default=7, ge=0, le=365)
@@ -206,6 +226,24 @@ class Settings(BaseSettings):
     def ai_is_cloud(self) -> bool:
         return self.ai_provider in CLOUD_AI_PROVIDERS
 
+    def work_calendar(self) -> WorkCalendar:
+        """The business calendar (cached: settings are immutable once loaded)."""
+        return _calendar(self.timezone, self.business_hours, tuple(self.holidays))
+
+    def _calendar_problems(self) -> list[str]:
+        problems: list[str] = []
+        try:
+            self.work_calendar()
+        except (CalendarError, ValueError) as exc:
+            problems.append(f"ZENTRAL_BUSINESS_HOURS / TIMEZONE / HOLIDAYS: {exc}")
+        unknown = set(self.sla_calendar) - PRIORITIES
+        if unknown:
+            problems.append(f"ZENTRAL_SLA_CALENDAR: unknown priority {sorted(unknown)}")
+        clocks = set(self.sla_calendar.values()) - {"business", "24x7"}
+        if clocks:
+            problems.append(f"ZENTRAL_SLA_CALENDAR: use 'business' or '24x7', not {sorted(clocks)}")
+        return problems
+
     def validate_for_runtime(self) -> None:
         """Fail closed on unsafe configuration."""
         problems: list[str] = []
@@ -242,8 +280,18 @@ class Settings(BaseSettings):
                 problems.append(f"ZENTRAL_{name.upper()}: unknown priority {sorted(unknown)}")
             if any(hours <= 0 for hours in targets.values()):
                 problems.append(f"ZENTRAL_{name.upper()}: hours must be positive")
+        problems.extend(self._calendar_problems())
         if problems:
             raise ConfigurationError("Unsafe configuration:\n- " + "\n- ".join(problems))
+
+
+@lru_cache(maxsize=16)
+def _calendar(zone: str, hours: str, holidays: tuple[str, ...]) -> WorkCalendar:
+    try:
+        days = [date.fromisoformat(d) for d in holidays]
+    except ValueError:
+        raise CalendarError("holidays must be dates like 2026-12-24") from None
+    return WorkCalendar.build(zone, hours, days)
 
 
 @lru_cache

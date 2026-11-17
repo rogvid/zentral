@@ -78,6 +78,8 @@ class TicketOut(Out):
     first_response_at: datetime | None = None
     resolve_due_at: datetime | None = None
     resolve_state: str = "none"
+    # "business" (working hours) or "24x7": which clock the targets run on.
+    target_clock: str = "24x7"
     # Set when this ticket was folded into another one.
     merged_into_id: int | None = None
     merged_into_key: str | None = None
@@ -225,6 +227,10 @@ SystemKey = Annotated[
 ]
 
 
+# Per-priority target overrides: {"urgent": 0.5, "high": 2}. At most a year.
+TargetHours = dict[TicketPriority, Annotated[float, Field(gt=0, le=8760)]]
+
+
 class SystemIn(In):
     key: SystemKey
     name: Short
@@ -232,6 +238,8 @@ class SystemIn(In):
     keywords: list[Short] = Field(default_factory=list, max_length=30)
     default_team_id: uuid.UUID | None = None
     active: bool = True
+    sla_response_hours: TargetHours = Field(default_factory=dict)
+    sla_resolve_hours: TargetHours = Field(default_factory=dict)
 
 
 class SystemOut(Out):
@@ -242,6 +250,8 @@ class SystemOut(Out):
     keywords: list[str]
     default_team_id: uuid.UUID | None
     active: bool
+    sla_response_hours: dict[str, float] = Field(default_factory=dict)
+    sla_resolve_hours: dict[str, float] = Field(default_factory=dict)
 
 
 class TeamMemberIn(In):

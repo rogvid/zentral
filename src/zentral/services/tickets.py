@@ -137,7 +137,8 @@ async def _user_names(ctx: Ctx, ids: set[str]) -> dict[str, str]:
 
 def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
     pii = ctx.can(P.TICKET_READ_PII)
-    response, resolve = sla.response_view(ticket), sla.resolve_view(ticket)
+    response = sla.response_view(ticket)
+    resolve = sla.resolve_view(ticket, ctx.settings)
     requester = None
     if ticket.requester is not None:
         contact = ticket.requester
@@ -181,6 +182,7 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         first_response_at=ticket.first_response_at,
         resolve_due_at=resolve.due_at,
         resolve_state=resolve.state,
+        target_clock=sla.clock_name(ticket, ctx.settings),
         merged_into_id=ticket.merged_into_id,
         merged_into_key=ticket_key(ctx, ticket.merged_into_id) if ticket.merged_into_id else None,
         ai_excluded=ai_excluded(ticket),
@@ -498,6 +500,8 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
             ticket.system_id, ticket.system = None, None
         else:
             apply_system(ticket, await load_system(ctx, patch.system_id))
+    if "system_id" in changed:
+        sla.refresh_targets(ticket, ctx.settings)
     if "status" in fields and patch.status is not None and patch.status != ticket.status:
         closing = patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
         if closing and ctx.settings.require_system_to_resolve and ticket.system_id is None:

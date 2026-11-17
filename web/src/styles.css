@@ -668,3 +668,5 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 .form-actions-left { display: flex; gap: 8px; }
 .merge summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
 .merge[open] summary { margin-bottom: 10px; }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.system-targets { margin-top: 10px; align-items: end; }

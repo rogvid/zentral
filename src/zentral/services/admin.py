@@ -129,10 +129,17 @@ async def _check_system_refs(ctx: Ctx, data: SystemIn) -> None:
         raise ValidationFailed("unknown team")
 
 
+def _system_fields(data: SystemIn) -> dict[str, Any]:
+    fields = data.model_dump()
+    for name in ("sla_response_hours", "sla_resolve_hours"):
+        fields[name] = {str(k): float(v) for k, v in fields[name].items()}
+    return fields
+
+
 async def create_system(ctx: Ctx, data: SystemIn) -> SystemOut:
     ctx.require(P.SYSTEM_MANAGE, "system")
     await _check_system_refs(ctx, data)
-    system = System(**data.model_dump())
+    system = System(**_system_fields(data))
     ctx.session.add(system)
     try:
         await ctx.session.flush()
@@ -148,7 +155,7 @@ async def update_system(ctx: Ctx, system_id: uuid.UUID, data: SystemIn) -> Syste
     if system is None:
         raise NotFound("system")
     await _check_system_refs(ctx, data)
-    for field, value in data.model_dump().items():
+    for field, value in _system_fields(data).items():
         setattr(system, field, value)
     try:
         await ctx.session.flush()

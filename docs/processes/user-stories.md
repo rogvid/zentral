@@ -46,8 +46,8 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ **new** | response and resolution targets per priority | the desk makes promises it can measure | `ZENTRAL_SLA_*_HOURS` |
 | ✓ **new** | to see volume, sources and target attainment | I can staff and fix the right things | [Insights](oversight.md#insights) |
 | ✓ **new** | resolved tickets to close by themselves | the queue stays honest | Auto-close |
-| ◻ | targets that follow business hours and holidays | an urgent ticket on Friday night is fair | Not yet: calendar hours today |
-| ◻ | targets that differ per system or team | the payments platform can promise more | Not yet: per priority today |
+| ✓ **new** | targets that follow business hours and holidays | an urgent ticket on Friday night is fair | [Which hours count](lifecycle.md#which-hours-count) |
+| ✓ **new** | targets that differ per system | the payments platform can promise more | [Targets per system](../guides/systems.md#targets-per-system) |
 | ◻ | escalation when a target is about to break | someone acts before it is late | Not yet: depends on notifications |
 
 ## Privacy officer

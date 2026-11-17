@@ -27,7 +27,8 @@ stateDiagram-v2
 
 ## Targets
 
-Every ticket makes two promises, set by its priority.
+Every ticket makes two promises, set by its priority — and by its system, when
+the system has [targets of its own](../guides/systems.md#targets-per-system).
 
 | Priority | First reply | Resolution |
 |---|---|---|
@@ -36,9 +37,26 @@ Every ticket makes two promises, set by its priority.
 | Normal | 8 hours | 3 days |
 | Low | 1 day | 7 days |
 
-These are the defaults (calendar hours); set your own with
-`ZENTRAL_SLA_RESPONSE_HOURS` and `ZENTRAL_SLA_RESOLVE_HOURS`, e.g.
-`urgent=0.5,high=2,normal=8`. A priority left out has no target.
+These are the defaults; set your own with `ZENTRAL_SLA_RESPONSE_HOURS` and
+`ZENTRAL_SLA_RESOLVE_HOURS`, e.g. `urgent=0.5,high=2,normal=8`. A priority left
+out has no target.
+
+### Which hours count
+
+With working hours configured (`ZENTRAL_BUSINESS_HOURS`), each priority runs on
+one of two clocks (`ZENTRAL_SLA_CALENDAR`):
+
+```mermaid
+flowchart LR
+    T["Ticket arrives<br/>Friday 16:00"] --> K{"Clock for<br/>its priority"}
+    K -- "24x7 (urgent)" --> U["8 h → due<br/>Saturday 00:00"]
+    K -- "business (normal)" --> N["8 working hours:<br/>1 h Friday + 7 h Monday<br/>→ due Monday 15:00"]
+```
+
+Holidays (`ZENTRAL_HOLIDAYS`) are skipped like weekends, and time spent
+*pending* is measured on the same clock: waiting over a weekend costs a
+business-clock ticket nothing. The *Targets* panel says which clock a ticket
+uses.
 
 ```mermaid
 flowchart LR

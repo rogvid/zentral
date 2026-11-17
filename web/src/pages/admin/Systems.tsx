@@ -1,11 +1,12 @@
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useApp, useLoad } from "../../context";
+import { formatTargets, parseTargets } from "../../lib";
 import type { SystemInfo, Team } from "../../types";
 import { Chip, Empty, ErrorState, Field, Spinner } from "../../ui";
 import { useAction, useDelete } from "./shared";
 
 export function Systems() {
-  const { api } = useApp();
+  const { api, notify } = useApp();
   const run = useAction();
   const remove = useDelete();
   const systems = useLoad(() => api.get<SystemInfo[]>("/systems?include_inactive=true"), []);
@@ -17,6 +18,12 @@ export function Systems() {
     const form = event.currentTarget;
     const data = new FormData(form);
     const value = (name: string) => String(data.get(name) ?? "").trim();
+    const response = parseTargets(value("response"));
+    const resolve = parseTargets(value("resolve"));
+    if (!response || !resolve) {
+      notify("Targets look like “urgent=1, high=4” — hours per priority.", "error");
+      return;
+    }
     await run(async () => {
       await api.post("/systems", {
         key: value("key"),
@@ -24,6 +31,8 @@ export function Systems() {
         description: value("description"),
         keywords: value("keywords").split(",").map((k) => k.trim()).filter(Boolean),
         default_team_id: value("team") || null,
+        sla_response_hours: response,
+        sla_resolve_hours: resolve,
       });
       form.reset();
       systems.reload();
@@ -39,6 +48,8 @@ export function Systems() {
         keywords: s.keywords,
         default_team_id: s.default_team_id,
         active: s.active,
+        sla_response_hours: s.sla_response_hours,
+        sla_resolve_hours: s.sla_resolve_hours,
         ...patch,
       });
       systems.reload();
@@ -74,6 +85,14 @@ export function Systems() {
         <Field label="Keywords" hint="Comma-separated words that identify the system in a message.">
           <input name="keywords" placeholder="invoice, checkout, card" />
         </Field>
+        <div className="form-row">
+          <Field label="First reply targets (hours)" hint="Optional. Replaces the global target for the priorities you list.">
+            <input name="response" placeholder="urgent=0.5, high=2" />
+          </Field>
+          <Field label="Resolution targets (hours)" hint="Optional. Unlisted priorities use the global targets.">
+            <input name="resolve" placeholder="urgent=4, high=12" />
+          </Field>
+        </div>
         <div>
           <button className="btn btn-primary">Add system</button>
         </div>
@@ -110,8 +129,57 @@ export function Systems() {
           </header>
           {s.description && <p>{s.description}</p>}
           {s.keywords.length > 0 && <p className="muted small">Keywords: {s.keywords.join(", ")}</p>}
+          <SystemTargets system={s} onSave={(patch) => save(s, patch)} />
         </div>
       ))}
     </section>
+  );
+}
+
+/** The system's own targets, editable in place. */
+function SystemTargets({ system, onSave }: { system: SystemInfo; onSave: (patch: Partial<SystemInfo>) => Promise<boolean> }) {
+  const { notify } = useApp();
+  const [editing, setEditing] = useState(false);
+  const own = Object.keys(system.sla_response_hours).length + Object.keys(system.sla_resolve_hours).length > 0;
+  if (!editing) {
+    return (
+      <p className="muted small system-targets">
+        {own
+          ? `Own targets — first reply: ${formatTargets(system.sla_response_hours) || "global"}; resolution: ${formatTargets(system.sla_resolve_hours) || "global"}.`
+          : "Uses the global targets."}{" "}
+        <button className="link-button" onClick={() => setEditing(true)}>
+          Change
+        </button>
+      </p>
+    );
+  }
+  return (
+    <form
+      className="form-row system-targets"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        const response = parseTargets(String(data.get("response") ?? ""));
+        const resolve = parseTargets(String(data.get("resolve") ?? ""));
+        if (!response || !resolve) {
+          notify("Targets look like “urgent=1, high=4” — hours per priority.", "error");
+          return;
+        }
+        void onSave({ sla_response_hours: response, sla_resolve_hours: resolve }).then((ok) => ok && setEditing(false));
+      }}
+    >
+      <Field label="First reply (hours)">
+        <input name="response" defaultValue={formatTargets(system.sla_response_hours)} placeholder="urgent=0.5, high=2" />
+      </Field>
+      <Field label="Resolution (hours)">
+        <input name="resolve" defaultValue={formatTargets(system.sla_resolve_hours)} placeholder="urgent=4, high=12" />
+      </Field>
+      <div className="form-actions-left">
+        <button className="btn btn-primary">Save targets</button>
+        <button type="button" className="btn btn-quiet" onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

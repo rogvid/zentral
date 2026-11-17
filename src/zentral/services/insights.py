@@ -122,7 +122,7 @@ async def insights(ctx: Ctx, days: int = 30) -> InsightsOut:
         if resolve_hours
         else None,
         first_response=_target([sla.response_view(t, now).state for t, _ in created]),
-        resolution=_target([sla.resolve_view(t, now).state for t, _ in created]),
+        resolution=_target([sla.resolve_view(t, ctx.settings, now).state for t, _ in created]),
         timeline=timeline,
         by_system=_top(Counter(name or "No system yet" for _, name in created)),
         by_category=_top(

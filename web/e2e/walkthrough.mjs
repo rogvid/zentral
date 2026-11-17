@@ -181,6 +181,11 @@ await as(browser, "admin", async (page) => {
   await go(page, "admin");
   await page.getByRole("tab", { name: "Systems" }).click();
   await page.getByText("Payment platform").first().waitFor();
+  const payments = page.locator(".card", { hasText: "Payment platform" });
+  await payments.getByRole("button", { name: "Change" }).click();
+  await payments.getByLabel("Resolution (hours)").fill("urgent=4, high=12");
+  await payments.getByRole("button", { name: "Save targets" }).click();
+  await payments.getByText(/Own targets .* resolution: urgent=4, high=12/).waitFor();
   await shot(page, "admin-systems");
 
   // A mail channel through the generated form.

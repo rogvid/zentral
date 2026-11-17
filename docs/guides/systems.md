@@ -59,6 +59,19 @@ to guess; the keyword fallback returns no suggestion when two systems match
 equally. A suggestion below the confidence threshold is shown with a "?" and
 not applied.
 
+## Targets per system
+
+Some systems deserve a faster promise than the desk's defaults. In
+*Administration → Systems*, choose **Change** under a system and give its own
+hours per priority, e.g. first reply `urgent=0.5, high=2` and resolution
+`urgent=4, high=12`. Priorities you leave out use the global targets, and the
+clock (working hours or around the clock) is still chosen by priority.
+
+A ticket gets its system's targets when it is created about the system, and is
+re-planned when someone links it to a system, moves it to another or changes
+its priority. Changing a system's targets affects tickets planned after the
+change.
+
 ## Making it mandatory
 
 Set `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE=true` and a ticket cannot be resolved or

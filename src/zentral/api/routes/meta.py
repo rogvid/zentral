@@ -80,6 +80,9 @@ async def public_config(rt: RuntimeDep) -> dict[str, Any]:
         "ticket_prefix": s.ticket_prefix,
         "categories": s.categories,
         "require_system_to_resolve": s.require_system_to_resolve,
+        # Shown next to targets so people know which hours count.
+        "business_hours": s.business_hours,
+        "timezone": s.timezone,
     }
 
 

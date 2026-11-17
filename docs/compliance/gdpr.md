@@ -25,7 +25,7 @@ one — a cloud AI provider.
 |---|---|---|
 | **Lawfulness, fairness, transparency** | Privacy operations and all access are recorded; AI use is visible on every ticket | Legal basis; privacy notice mentioning the service desk and AI-assisted triage |
 | **Purpose limitation** | Role and team scoping; no analytics or profiling features | Do not repurpose ticket data |
-| **Data minimisation** | Plain text only, no attachments; personal data masked for roles that do not need it and before AI; audit and logs hold no content | Tell people not to send unnecessary data; keep tags free of names |
+| **Data minimisation** | Attachments limited to images, PDF and text, with metadata stripped, and never shown to AI; personal data masked for roles that do not need it and before AI; audit and logs hold no content | Tell people not to send unnecessary data; keep tags free of names |
 | **Accuracy** | Conversation history is preserved; corrections added as messages | — |
 | **Storage limitation** | Automatic scrubbing after `ZENTRAL_RETENTION_DAYS`; people without tickets are erased | Choose and justify the period; mailbox and backup retention |
 | **Integrity and confidentiality** | See [Security architecture](../architecture/security.md) | Platform security, key custody |

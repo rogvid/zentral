@@ -37,6 +37,7 @@ and PostgreSQL.
 | Repeated bad tokens are throttled | Per-address limit, successful requests unaffected |
 | Text masking runs in linear time | 200 kB of pattern-bait must finish quickly (a quadratic pattern was found and fixed this way) |
 | Outbound calls are allow-listed | Metadata address, localhost, look-alike hosts, plain HTTP, embedded credentials → refused |
+| Key custody | Keyring tamper detection (header, nonce, ciphertext); foreign provider or KEK refused; a keyring cannot redirect Key Vault calls to another host, key or path; production refuses plain-text and duplicate environment keys and the `local_file` provider; retiring a data key refused while any value still needs it; escrow copy checked against the keys in use |
 | AI output cannot escape the allow-list | Unknown category/system, out-of-range confidence, multi-line summary |
 | AI cannot cause actions | Injection text + hostile model answer → no outbound request, no job, no state change beyond labels |
 | AI failure does not stop intake | Provider error → rules fallback, recorded |
@@ -83,14 +84,16 @@ that drafts never reach browser storage.
 
 ## Known limitations
 
-1. **Key custody.** Keys are environment variables in the application's
-   memory. A full compromise of the application host exposes the data. No
-   HSM/KMS envelope encryption yet.
+1. **Keys in process memory.** With a [key provider](../operations/key-custody.md)
+   the keys are kept out of configuration and storage and unwrapped by a KMS
+   at start-up, but the running process holds them: a full compromise of the
+   application host while it runs exposes the data.
 2. **Masking is pattern-based.** Names and context in free text are not
    detected. It is data minimisation, not anonymisation.
 3. **Metadata is not encrypted**: statuses, timestamps, tags, team/system
    links, staff names, audit actor IDs and IP addresses.
-4. **No attachments.** They stay in the source channel.
+4. **Attachment scanning is signature-based** (ClamAV); a novel malicious
+   PDF can pass. PDFs are downloads only, never rendered by Zentral.
 5. **Search** covers only the 1,000 most recent visible tickets.
 6. **Rate limiting is per process** and in memory.
 7. **Audit**: tail truncation needs an external copy to detect; list views are
@@ -109,14 +112,16 @@ that drafts never reach browser storage.
 
 ## Before go-live: your checklist
 
-- [ ] **Penetration test** by an independent party, covering the API, MCP
-      endpoint, webhook endpoint and web client
-- [ ] **DPIA** and entry in the record of processing activities
+- [ ] **Penetration test** by an independent party ([brief](pentest-brief.md))
+- [ ] **DPIA** ([pre-filled draft](dpia.md)) and entry in the record of
+      processing activities
 - [ ] **Identity integration tested** in your tenant: sign-in, each role, a
       service identity, role removal taking effect
 - [ ] **Each channel tested** end to end with real (non-sensitive) messages
 - [ ] Mail connector **scoped to the one mailbox** and verified
-- [ ] Keys in a secret manager; **restore tested** with them
+- [ ] Keys in a [KMS-wrapped keyring](../operations/key-custody.md), escrow
+      copy in a safe; **restore drill passed** with them
+      (`scripts/restore_drill.py`)
 - [ ] TLS configuration reviewed (e.g. testssl.sh / SSL Labs)
 - [ ] WAF / rate limiting in front of the public endpoints
 - [ ] Logs to SIEM; alerts from [Monitoring](../operations/monitoring.md) live

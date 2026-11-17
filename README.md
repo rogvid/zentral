@@ -39,7 +39,7 @@ uv sync --group docs && uv run mkdocs serve
 
 | | |
 |---|---|
-| Start | [Getting started](docs/getting-started.md) · [Design principles](docs/design-principles.md) |
+| Start | [Getting started](docs/getting-started.md) · [Design principles](docs/design-principles.md) · [Roadmap](docs/roadmap.md) |
 | How it works | [Overview](docs/processes/index.md) · [Intake](docs/processes/intake.md) · [Triage](docs/processes/triage.md) · [Lifecycle](docs/processes/lifecycle.md) · [Access](docs/processes/access.md) · [Personal data](docs/processes/data.md) · [Oversight](docs/processes/oversight.md) · [User stories](docs/processes/user-stories.md) |
 | Architecture | [Overview](docs/architecture/overview.md) · [Security](docs/architecture/security.md) · [Threat model](docs/architecture/threat-model.md) · [AI pipeline](docs/architecture/ai.md) |
 | Use | [Agents](docs/guides/agents.md) · [Administration](docs/guides/administration.md) · [Systems](docs/guides/systems.md) · [MCP](docs/guides/mcp.md) · [API](docs/guides/api.md) |

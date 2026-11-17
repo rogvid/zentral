@@ -2,10 +2,10 @@
 
 What each kind of user needs from Zentral, and where it stands. Stories marked
 **new** were identified as missing in a review of the end-to-end processes and
-have been built. Stories marked **not yet** are known gaps, ordered by how much
-they matter; they are candidates for the roadmap, not promises.
+have been built. Every story here is now built; what comes next is on the
+[roadmap](../roadmap.md).
 
-✓ built · ✓ **new** built in the latest round · ◻ not yet
+✓ built · ✓ **new** built in the latest rounds
 
 ## Requester
 

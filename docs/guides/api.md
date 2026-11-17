@@ -28,6 +28,7 @@ Every response has an `X-Request-ID` header; quote it when reporting a problem.
 ```http
 GET    /tickets?status=new&status=open&priority=urgent&system_id=…&q=vpn&limit=50&offset=0
 GET    /tickets/stats
+GET    /tickets/insights?days=30
 POST   /tickets
 GET    /tickets/{id}
 PATCH  /tickets/{id}
@@ -36,8 +37,14 @@ POST   /tickets/{id}/messages
 ```
 
 List filters: `status` (repeatable), `priority`, `category`, `team_id`,
-`system_id`, `no_system`, `assignee_id`, `unassigned`, `requester_email`
-(needs `ticket:read_pii`), `q`. `limit` ≤ 100.
+`system_id`, `no_system`, `assignee_id`, `unassigned`, `overdue`,
+`requester_email` (needs `ticket:read_pii`), `q`. `limit` ≤ 100.
+
+A ticket carries its targets: `response_due_at`, `response_state`,
+`first_response_at`, `resolve_due_at`, `resolve_state` (states: `met`,
+`late`, `due`, `breached`, `paused`, `none`). `/tickets/insights` returns
+aggregates only — counts, medians, target attainment, a daily timeline —
+scoped to the tickets the caller can see; `days` is 7–365.
 
 ```bash
 # Create

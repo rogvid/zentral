@@ -73,8 +73,10 @@ ticket. Rules can only route and label.
 
 ## Settings that live in configuration
 
-Categories, the retention period, the AI provider, whether a system is required
-before resolving, and all identity settings are deployment configuration, not
+Categories, service-level targets (`ZENTRAL_SLA_RESPONSE_HOURS`,
+`ZENTRAL_SLA_RESOLVE_HOURS`), how long resolved tickets wait before closing
+(`ZENTRAL_AUTO_CLOSE_DAYS`), the retention period, the AI provider, whether a
+system is required before resolving, and all identity settings are deployment configuration, not
 UI settings: see the [configuration reference](../operations/configuration.md).
 This is deliberate — they are security- or compliance-relevant and should
 change through your normal change process.

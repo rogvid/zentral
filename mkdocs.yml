@@ -31,6 +31,13 @@ theme:
 extra_css:
   - assets/zentral.css
 
+# Mermaid is served from this site (see docs/hooks.py), not from a CDN.
+extra_javascript:
+  - assets/javascripts/mermaid.min.js
+
+hooks:
+  - docs/hooks.py
+
 extra:
   generator: false
   social:
@@ -57,6 +64,15 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Design principles: design-principles.md
+  - How it works:
+      - Overview: processes/index.md
+      - Intake: processes/intake.md
+      - Triage: processes/triage.md
+      - Ticket lifecycle: processes/lifecycle.md
+      - People and access: processes/access.md
+      - Personal data: processes/data.md
+      - Oversight and insights: processes/oversight.md
+      - User stories: processes/user-stories.md
   - Architecture:
       - Overview: architecture/overview.md
       - Data model: architecture/data-model.md

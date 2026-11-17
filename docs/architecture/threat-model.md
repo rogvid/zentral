@@ -52,6 +52,7 @@ beyond their role, any AI model's output.
 | Trick an AI *agent* reading tickets over MCP | Server instructions and tool descriptions mark content as untrusted; the recommended agent role cannot see personal data or contact requesters; everything is audited. **The agent's own guardrails remain the operator's responsibility** |
 | Inject into someone else's ticket by guessing its key | Key threading requires the sender to be that ticket's requester |
 | Flood the desk with duplicates | Idempotent ingestion; thread keys collapse repeated alerts |
+| Use acknowledgements as a spam relay (backscatter) | The receipt carries only the ticket key — no content, no attacker-controlled text; sent once per new ticket, never to automatic mail; limited by the channel's allowed recipient domains; can be turned off per channel |
 
 ### Insiders
 

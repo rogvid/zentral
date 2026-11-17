@@ -97,6 +97,8 @@ generated from the connector's settings:
 | **Send replies** | on | Deliver agents' replies from this mailbox. Off = read-only channel (no `Mail.Send` needed) |
 | **Allowed recipient domains** | *(any)* | Only send replies to these domains — e.g. your own, for an internal desk |
 | **Save replies to Sent Items** | on | Keep a copy of sent replies in the mailbox |
+| **Acknowledge new tickets** | on | Send the requester a short receipt with the ticket key. Needs *Send replies* |
+| **Acknowledgement text** | *(built-in)* | Your own wording; `{ticket_key}` is replaced with the key. Plain text, no personal data |
 | **Batch size** | 25 | Messages fetched per poll |
 
 ### Credentials
@@ -171,6 +173,13 @@ the policy for one mailbox — choose a probe that the policy must exclude.
 - **Duplicates** are impossible: each message ID is ingested once.
 - **Mark as read** happens only after the ticket is safely stored; if marking
   fails, the ticket still exists.
+- **Acknowledgements** go only to genuinely new tickets — never to
+  automatic replies, blocked senders or replies threaded onto an existing
+  ticket — and only to recipients the *Allowed recipient domains* permit.
+  Because a sender address can be forged, the receipt says nothing but the
+  ticket key: someone who spoofs an address learns nothing, and the real owner
+  gets one short, harmless message. For an internal desk, restrict *Allowed
+  recipient domains* to your own.
 - **Attachments are ignored** (they stay in the mailbox).
 
 ## Operations

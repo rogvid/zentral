@@ -103,6 +103,8 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --all-groups
+      - run: npm ci
+        working-directory: web
       - name: Generated reference tables are current
         run: uv run python scripts/gen_docs.py --check
       - run: uv run mkdocs build --strict

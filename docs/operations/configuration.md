@@ -16,7 +16,7 @@ in the working directory is read too). Generate a starting point with
 | **Keys** | `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` |
 | **AI** | `ZENTRAL_AI_PROVIDER`, `ZENTRAL_AI_BASE_URL`, `ZENTRAL_AI_MODEL`, `ZENTRAL_AI_MIN_CONFIDENCE` |
 | **Data protection** | `ZENTRAL_RETENTION_DAYS`, `ZENTRAL_AI_REDACT_PII` |
-| **Process** | `ZENTRAL_CATEGORIES`, `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE`, `ZENTRAL_TICKET_PREFIX` |
+| **Process** | `ZENTRAL_CATEGORIES`, `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE`, `ZENTRAL_TICKET_PREFIX`, `ZENTRAL_SLA_RESPONSE_HOURS`, `ZENTRAL_SLA_RESOLVE_HOURS`, `ZENTRAL_AUTO_CLOSE_DAYS` |
 | **Plug-ins** | `ZENTRAL_ENABLED_CONNECTORS`, `ZENTRAL_OUTBOUND_HOST_ALLOWLIST` |
 
 ## Notes on individual settings
@@ -38,6 +38,17 @@ in the working directory is read too). Generate a starting point with
 `ZENTRAL_RETENTION_DAYS`
 :   Days after resolution before a ticket's content is scrubbed. Set it to the
     period your retention policy justifies.
+
+`ZENTRAL_SLA_RESPONSE_HOURS`, `ZENTRAL_SLA_RESOLVE_HOURS`
+:   Targets per priority, in hours, e.g.
+    `urgent=1,high=4,normal=8,low=24`. Every priority must be present. The
+    clock runs around the clock (no business hours) and pauses while a ticket
+    is pending. A change applies to tickets created or re-prioritised after
+    it.
+
+`ZENTRAL_AUTO_CLOSE_DAYS`
+:   Days a resolved ticket waits before it is closed; `0` turns it off.
+    Retention still counts from resolution.
 
 `ZENTRAL_AI_REDACT_PII`
 :   Mask personal identifiers before text is sent to a model. Leave on. Cannot

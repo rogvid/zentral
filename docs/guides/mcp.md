@@ -27,6 +27,7 @@ no separate permission system.
 | `update_ticket` | Status, priority, category, tags, system, team; assignee | `ticket:update` (`ticket:assign` for assignee) |
 | `add_note` | Internal note | `ticket:note` |
 | `reply_to_requester` | Send a message to the requester | `ticket:reply` |
+| `get_insights` | Aggregates for the last N days: volumes, medians, targets met, breakdowns | `ticket:read` |
 | `list_teams`, `list_systems`, `list_categories` | Reference data | `ticket:read` |
 
 ## Give the agent the least it needs

@@ -7,6 +7,9 @@ them — under the same identity, the same permissions and the same audit trail.
 
 ![The Zentral inbox](assets/inbox.png)
 
+New here? [How it works](processes/index.md) draws out where requests and data
+come from, who owns each step, and what the outcome is.
+
 ## What it does
 
 | | |
@@ -14,6 +17,7 @@ them — under the same identity, the same permissions and the same audit trail.
 | **One inbox, many channels** | E-mail (Microsoft 365), Microsoft Teams, and a signed webhook that any monitoring system or application can call. New channels are [plug-ins](extending/connectors.md). |
 | **Every ticket names its system** | Tickets are linked to the business system they concern — payments, HR portal, web shop. The link can come from the sender, the channel, AI, a rule or a person. [How it works](guides/systems.md). |
 | **AI triage on your terms** | Category, priority, system and a one-line summary for every new ticket. Use an [on-prem model](runbooks/switch-to-on-prem-ai.md); personal data is masked before any model sees it; the model can suggest but never act. |
+| **Targets and insight** | Response and resolution targets per priority, paused while you wait on the requester; an Overdue queue; requesters get a receipt with their ticket key; resolved tickets close themselves. [Insights](guides/agents.md#insights) shows how the desk is doing — numbers only, never content. |
 | **AI agents are first-class** | A built-in [MCP server](guides/mcp.md) lets agents search, read, triage and annotate tickets with a least-privilege role. |
 | **Your identity provider** | Microsoft Entra ID out of the box, or [any OpenID Connect provider](operations/identity-oidc.md). Zentral stores no passwords and no role assignments. |
 | **Provable compliance** | Role-based access with team scoping, field-level encryption, a tamper-evident [audit trail](compliance/logging.md) of every access and change, and built-in [GDPR](compliance/gdpr.md) export, erasure and retention. |

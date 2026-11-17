@@ -12,7 +12,7 @@ The cards at the top are live counts for *your* scope and double as filters:
 | Card | Shows |
 |---|---|
 | **Active** | Everything new, open or pending |
-| **Urgent** | Active tickets with urgent priority |
+| **Overdue** | Active tickets past a response or resolution target |
 | **Unassigned** | Nobody has picked these up |
 | **Assigned to me** | Your own queue |
 | **No system yet** | Tickets nobody has linked to a system |
@@ -26,7 +26,8 @@ You see tickets that belong to **your teams**, tickets **assigned to you**, and
 by guessing a link either.
 
 A coloured bar on the left of a row marks high (amber) and urgent (red)
-priority. A purple label ending in "?" is an AI suggestion that has not been
+priority. The **Due** column shows the next target: time left, or how late it
+is. It is empty while a ticket is *pending* — the clock is paused. A purple label ending in "?" is an AI suggestion that has not been
 applied.
 
 ## Working a ticket
@@ -52,6 +53,32 @@ Handy to know: ++ctrl+enter++ sends. Text you have not sent yet is kept while
 you look at another ticket (in memory only — it is gone when you close the
 tab). When the queue changes while you are in the inbox, a banner offers the
 latest view.
+
+## Targets
+
+Every ticket has two targets, set from its priority:
+
+- **First response** — the first reply to the requester. An automatic
+  acknowledgement does not count; a person must answer.
+- **Resolution** — the ticket is resolved. Time spent *pending* (waiting for
+  the requester) does not count.
+
+The *Targets* panel on a ticket shows both: met, late, due in…, or breached.
+Changing the priority moves the targets. How the clock works is drawn out in
+[Ticket lifecycle](../processes/lifecycle.md).
+
+A resolved ticket that nobody reopens is closed automatically after a few
+days (7 by default). A reply after that starts a new ticket.
+
+## Insights
+
+**Insights** in the sidebar shows how the desk is doing over the last 7–365
+days: tickets received and resolved, open and overdue now, median times, how
+many met their targets, and where the work comes from (system, category,
+channel, priority). It counts only tickets you could open, and it shows
+numbers, never content. Switch the chart to a table with *Show as table*.
+
+![Insights](../assets/insights.png)
 
 ## The AI triage card
 

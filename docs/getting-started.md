@@ -43,6 +43,13 @@ uv run python scripts/seed_demo.py
 This creates three teams, five systems, two automation rules, a webhook channel
 and six tickets.
 
+For charts worth looking at in **Insights**, add a month of resolved history
+(development mode only — it refuses to run otherwise):
+
+```bash
+uv run python scripts/seed_history.py
+```
+
 ## 4. Look around
 
 Open <http://localhost:8000>. The development identity provider asks who you

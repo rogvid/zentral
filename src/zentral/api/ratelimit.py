@@ -15,6 +15,12 @@ class RateLimiter:
         self._windows: dict[str, tuple[int, int]] = {}
         self._max_keys = max_keys
 
+    def blocked(self, key: str, limit: int, window_seconds: int = 60) -> bool:
+        """True if ``key`` has already used up its allowance (does not count as a use)."""
+        window = int(time.monotonic()) // window_seconds
+        current, count = self._windows.get(key, (window, 0))
+        return current == window and count >= limit
+
     def allow(self, key: str, limit: int, window_seconds: int = 60) -> bool:
         window = int(time.monotonic()) // window_seconds
         current, count = self._windows.get(key, (window, 0))

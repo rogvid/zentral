@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, false, func, or_, select, true
+from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true, update
 
 from zentral.db.models import (
+    Attachment,
+    AuditEvent,
     Contact,
     DeliveryStatus,
+    IngestSource,
     Job,
     Message,
     MessageKind,
+    Rating,
+    System,
     Team,
     Ticket,
     TicketStatus,
@@ -21,6 +27,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.schemas import (
+    ActivityOut,
     MessageCreate,
     MessageOut,
     RequesterOut,
@@ -32,6 +39,7 @@ from zentral.schemas import (
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
 from zentral.security.redaction import redact
+from zentral.services import notifications, sla
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound, PermissionDenied, ValidationFailed
 
@@ -48,7 +56,10 @@ class TicketFilter:
     category: str | None = None
     team_id: uuid.UUID | None = None
     assignee_id: str | None = None
+    system_id: uuid.UUID | None = None
+    no_system: bool = False
     unassigned: bool = False
+    overdue: bool = False
     requester_email: str | None = None
     q: str | None = None
     limit: int = 50
@@ -66,18 +77,32 @@ def visible_clause(ctx: Ctx) -> ColumnElement[bool]:
     """SQL predicate selecting the tickets the caller is allowed to see."""
     if not ctx.can(P.TICKET_READ):
         return false()
+    scope: ColumnElement[bool]
     if ctx.can(P.TICKET_READ_ALL):
-        return true()
-    clauses: list[ColumnElement[bool]] = [Ticket.assignee_id == ctx.principal.subject]
-    if ctx.team_ids:
-        clauses.append(Ticket.team_id.in_(ctx.team_ids))
-    if ctx.can(P.TICKET_TRIAGE):
-        clauses.append(Ticket.team_id.is_(None))
-    return or_(*clauses)
+        scope = true()
+    else:
+        clauses: list[ColumnElement[bool]] = [Ticket.assignee_id == ctx.principal.subject]
+        if ctx.team_ids:
+            clauses.append(Ticket.team_id.in_(ctx.team_ids))
+        if ctx.can(P.TICKET_TRIAGE):
+            clauses.append(Ticket.team_id.is_(None))
+        scope = or_(*clauses)
+    if ctx.is_ai_agent:
+        objected = select(Contact.id).where(Contact.ai_objected_at.is_not(None))
+        scope = and_(
+            scope, or_(Ticket.requester_id.is_(None), Ticket.requester_id.not_in(objected))
+        )
+    return scope
+
+
+def ai_excluded(ticket: Ticket) -> bool:
+    return ticket.requester is not None and ticket.requester.ai_objected_at is not None
 
 
 def is_visible(ctx: Ctx, ticket: Ticket) -> bool:
     if not ctx.can(P.TICKET_READ):
+        return False
+    if ctx.is_ai_agent and ai_excluded(ticket):
         return False
     if ctx.can(P.TICKET_READ_ALL) or ticket.assignee_id == ctx.principal.subject:
         return True
@@ -115,6 +140,8 @@ async def _user_names(ctx: Ctx, ids: set[str]) -> dict[str, str]:
 
 def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
     pii = ctx.can(P.TICKET_READ_PII)
+    response = sla.response_view(ticket)
+    resolve = sla.resolve_view(ticket, ctx.settings)
     requester = None
     if ticket.requester is not None:
         contact = ticket.requester
@@ -133,7 +160,7 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         key=ticket_key(ctx, ticket.id),
         subject=ticket.subject if pii else redact(ticket.subject),
         status=TicketStatus(ticket.status),
-        priority=ticket.priority,  # type: ignore[arg-type]
+        priority=ticket.priority,
         category=ticket.category,
         tags=list(ticket.tags or []),
         channel=ticket.channel,
@@ -141,21 +168,43 @@ def _present(ctx: Ctx, ticket: Ticket, names: dict[str, str]) -> TicketOut:
         team_name=ticket.team.name if ticket.team else None,
         assignee_id=ticket.assignee_id,
         assignee_name=names.get(ticket.assignee_id) if ticket.assignee_id else None,
+        system_id=ticket.system_id,
+        system_key=ticket.system.key if ticket.system else None,
+        system_name=ticket.system.name if ticket.system else None,
         requester=requester,
         ai_category=ticket.ai_category,
         ai_priority=ticket.ai_priority,
+        ai_system_key=ticket.ai_system_key,
         ai_confidence=ticket.ai_confidence,
         ai_summary=ticket.ai_summary,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
         resolved_at=ticket.resolved_at,
+        response_due_at=response.due_at,
+        response_state=response.state,
+        first_response_at=ticket.first_response_at,
+        resolve_due_at=resolve.due_at,
+        resolve_state=resolve.state,
+        target_clock=sla.clock_name(ticket, ctx.settings),
+        merged_into_id=ticket.merged_into_id,
+        merged_into_key=ticket_key(ctx, ticket.merged_into_id) if ticket.merged_into_id else None,
+        ai_excluded=ai_excluded(ticket),
         pii_redacted=not pii,
     )
 
 
 async def present_ticket(ctx: Ctx, ticket: Ticket) -> TicketOut:
     names = await _user_names(ctx, {ticket.assignee_id} if ticket.assignee_id else set())
-    return _present(ctx, ticket, names)
+    out = _present(ctx, ticket, names)
+    rating = await ctx.session.get(Rating, ticket.id)
+    if rating is not None:
+        out.rating_score = rating.score
+        if rating.comment:
+            # The requester's own words: personal data like any message.
+            out.rating_comment = (
+                rating.comment if ctx.can(P.TICKET_READ_PII) else redact(rating.comment)
+            )
+    return out
 
 
 # --- queries ----------------------------------------------------------------------
@@ -182,8 +231,14 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
         where.append(Ticket.team_id == f.team_id)
     if f.assignee_id:
         where.append(Ticket.assignee_id == f.assignee_id)
+    if f.system_id:
+        where.append(Ticket.system_id == f.system_id)
+    if f.no_system:
+        where.append(Ticket.system_id.is_(None))
     if f.unassigned:
         where.append(Ticket.assignee_id.is_(None))
+    if f.overdue:
+        where.append(overdue_clause())
     if f.requester_email:
         # Looking tickets up by a person's e-mail is a personal-data operation.
         ctx.require(P.TICKET_READ_PII, "ticket")
@@ -225,6 +280,49 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
     )
 
 
+ACTIVE_STATUSES = (TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.PENDING)
+
+
+def overdue_clause() -> ColumnElement[bool]:
+    """Active tickets past a target: no first reply in time, or not resolved in time."""
+    now = utcnow()
+    return and_(
+        Ticket.status.in_(ACTIVE_STATUSES),
+        or_(
+            and_(
+                Ticket.first_response_at.is_(None),
+                Ticket.requester_id.is_not(None),
+                Ticket.response_due_at < now,
+            ),
+            and_(Ticket.paused_at.is_(None), Ticket.resolve_due_at < now),
+        ),
+    )
+
+
+async def ticket_stats(ctx: Ctx) -> dict[str, int]:
+    """Counts of active tickets in the caller's scope, for the inbox overview.
+    Aggregates only — no ticket content — so this is not written to the audit trail."""
+    ctx.require(P.TICKET_READ, "ticket")
+
+    def count_if(condition: ColumnElement[bool]) -> ColumnElement[int]:
+        return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+    row = (
+        await ctx.session.execute(
+            select(
+                func.count().label("active"),
+                count_if(Ticket.status == TicketStatus.NEW).label("new"),
+                count_if(Ticket.assignee_id.is_(None)).label("unassigned"),
+                count_if(Ticket.assignee_id == ctx.principal.subject).label("mine"),
+                count_if(Ticket.priority == "urgent").label("urgent"),
+                count_if(Ticket.system_id.is_(None)).label("no_system"),
+                count_if(overdue_clause()).label("overdue"),
+            ).where(visible_clause(ctx), Ticket.status.in_(ACTIVE_STATUSES))
+        )
+    ).one()
+    return {key: int(value) for key, value in row._mapping.items()}
+
+
 async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
     ticket = await load_ticket(ctx, ticket_id)
     pii = ctx.can(P.TICKET_READ_PII)
@@ -234,6 +332,17 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
         )
     ).all()
     names = await _user_names(ctx, {m.author_user_id for m in messages if m.author_user_id})
+    from zentral.services import attachments as files
+
+    by_message: dict[uuid.UUID | None, list[Any]] = {}
+    for a in (
+        await ctx.session.scalars(
+            select(Attachment)
+            .where(Attachment.ticket_id == ticket.id)
+            .order_by(Attachment.created_at)
+        )
+    ).all():
+        by_message.setdefault(a.message_id, []).append(files.out(ctx, a))
     out: list[MessageOut] = []
     for m in messages:
         if m.author_contact_id is not None:
@@ -250,13 +359,69 @@ async def list_messages(ctx: Ctx, ticket_id: int) -> list[MessageOut]:
                 kind=m.kind,
                 body=m.body if pii else redact(m.body),
                 author_name=author,
-                author_type=author_type,  # type: ignore[arg-type]
+                author_type=author_type,
                 delivery_status=m.delivery_status,
                 created_at=m.created_at,
+                attachments=by_message.get(m.id, []),
             )
         )
     ctx.audit("ticket.messages.read", "ticket", ticket.id, count=len(out), pii=pii)
     return out
+
+
+# What happened to a ticket, as opposed to who looked at it. Reads stay with auditors.
+ACTIVITY_ACTIONS = (
+    "ticket.created",
+    "ticket.ingested",
+    "ticket.message_received",
+    "ticket.updated",
+    "ticket.classified",
+    "automation.rule_applied",
+    "ticket.note_added",
+    "ticket.replied",
+    "ticket.acknowledged",
+    "ticket.auto_closed",
+    "ticket.merged",
+    "ticket.merge_received",
+    "ticket.classification_skipped",
+    "ticket.escalated",
+    "ticket.rated",
+    "attachment.added",
+    "attachment.cleared",
+    "attachment.blocked",
+    "message.delivered",
+    "message.delivery_failed",
+)
+
+
+async def ticket_activity(ctx: Ctx, ticket_id: int) -> list[ActivityOut]:
+    """The ticket's change history for the people working it."""
+    ticket = await load_ticket(ctx, ticket_id)
+    events = (
+        await ctx.session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.resource_type == "ticket",
+                AuditEvent.resource_id == str(ticket.id),
+                AuditEvent.action.in_(ACTIVITY_ACTIONS),
+                AuditEvent.outcome != "denied",
+            )
+            .order_by(AuditEvent.seq.desc())
+            .limit(200)
+        )
+    ).all()
+    names = await _user_names(ctx, {e.actor_id for e in events if e.actor_kind != "system"})
+    return [
+        ActivityOut(
+            occurred_at=e.occurred_at,
+            action=e.action,
+            actor_name="Zentral" if e.actor_kind == "system" else names.get(e.actor_id, "Staff"),
+            actor_kind=e.actor_kind,
+            channel=e.channel,
+            details=e.details,
+        )
+        for e in events
+    ]
 
 
 # --- commands ---------------------------------------------------------------------
@@ -270,6 +435,21 @@ def _check_category(ctx: Ctx, category: str | None) -> None:
 async def _check_team(ctx: Ctx, team_id: uuid.UUID | None) -> None:
     if team_id is not None and await ctx.session.get(Team, team_id) is None:
         raise ValidationFailed("unknown team")
+
+
+async def load_system(ctx: Ctx, system_id: uuid.UUID) -> System:
+    system = await ctx.session.get(System, system_id)
+    if system is None or not system.active:
+        raise ValidationFailed("unknown or inactive system")
+    return system
+
+
+def apply_system(ticket: Ticket, system: System) -> None:
+    """Link a ticket to a system; the system's team takes it if nobody has yet."""
+    ticket.system_id = system.id
+    ticket.system = system
+    if ticket.team_id is None and system.default_team_id is not None:
+        ticket.team_id = system.default_team_id
 
 
 async def get_or_create_contact(
@@ -310,8 +490,11 @@ async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
         requester_id=requester.id if requester else None,
     )
     ticket.requester = requester
+    if data.system_id is not None:
+        apply_system(ticket, await load_system(ctx, data.system_id))
     ctx.session.add(ticket)
     await ctx.session.flush()
+    sla.refresh_targets(ticket, ctx.settings)
     ctx.session.add(
         Message(
             ticket_id=ticket.id,
@@ -323,7 +506,7 @@ async def create_ticket(ctx: Ctx, data: TicketCreate) -> TicketOut:
     )
     ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
     ctx.audit("ticket.created", "ticket", ticket.id, channel=ticket.channel)
-    await ctx.session.refresh(ticket, ["team"])
+    await ctx.session.refresh(ticket, ["team", "system"])
     return await present_ticket(ctx, ticket)
 
 
@@ -332,7 +515,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     fields = patch.model_fields_set
     changed: dict[str, Any] = {}
 
-    if fields & {"status", "priority", "category", "tags"}:
+    if fields & {"status", "priority", "category", "tags", "system_id"}:
         ctx.require(P.TICKET_UPDATE, "ticket", str(ticket_id))
     if "team_id" in fields and not ctx.can(P.TICKET_ASSIGN):
         # Routing to a team is allowed with ticket:update; picking a person is not.
@@ -340,8 +523,20 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     if "assignee_id" in fields:
         ctx.require(P.TICKET_ASSIGN, "ticket", str(ticket_id))
 
+    if "system_id" in fields and patch.system_id != ticket.system_id:
+        changed["system_id"] = [str(ticket.system_id or ""), str(patch.system_id or "")]
+        if patch.system_id is None:
+            ticket.system_id, ticket.system = None, None
+        else:
+            apply_system(ticket, await load_system(ctx, patch.system_id))
+    if "system_id" in changed:
+        sla.refresh_targets(ticket, ctx.settings)
     if "status" in fields and patch.status is not None and patch.status != ticket.status:
+        closing = patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+        if closing and ctx.settings.require_system_to_resolve and ticket.system_id is None:
+            raise ValidationFailed("select the system this ticket concerns before resolving it")
         changed["status"] = [ticket.status, patch.status.value]
+        sla.status_changed(ticket, ticket.status, patch.status, ctx.settings)
         ticket.status = patch.status
         if patch.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
             ticket.resolved_at = ticket.resolved_at or utcnow()
@@ -350,6 +545,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
     if "priority" in fields and patch.priority is not None and patch.priority != ticket.priority:
         changed["priority"] = [ticket.priority, patch.priority.value]
         ticket.priority = patch.priority
+        sla.refresh_targets(ticket, ctx.settings)
     if "category" in fields and patch.category != ticket.category:
         _check_category(ctx, patch.category)
         changed["category"] = [ticket.category, patch.category]
@@ -370,6 +566,8 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
                 raise ValidationFailed("unknown assignee")
         changed["assignee_id"] = [ticket.assignee_id or "", patch.assignee_id or ""]
         ticket.assignee_id = patch.assignee_id
+        if patch.assignee_id:
+            notifications.notify(ctx, {patch.assignee_id}, "assigned", ticket.id)
         if ticket.status == TicketStatus.NEW and patch.assignee_id:
             ticket.status = TicketStatus.OPEN
 
@@ -377,7 +575,7 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
         ticket.updated_at = utcnow()
         ctx.audit("ticket.updated", "ticket", ticket.id, changes=changed)
         await ctx.session.flush()
-        await ctx.session.refresh(ticket, ["team"])
+        await ctx.session.refresh(ticket, ["team", "system"])
     return await present_ticket(ctx, ticket)
 
 
@@ -388,10 +586,20 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
     outbound = data.kind == "outbound"
     ctx.require(P.TICKET_REPLY if outbound else P.TICKET_NOTE, "ticket", str(ticket_id))
     delivery = DeliveryStatus.NOT_APPLICABLE
+    if data.attachment_ids and not outbound:
+        raise ValidationFailed("files for a note are attached when they are uploaded")
+    by_mail = False
     if outbound:
         if ticket.requester_id is None:
             raise ValidationFailed("ticket has no requester to reply to")
         delivery = DeliveryStatus.PENDING if ticket.source_id else DeliveryStatus.NOT_APPLICABLE
+        if data.attachment_ids:
+            by_mail = await _channel_sends_files(ctx, ticket)
+            if not by_mail and not ctx.settings.portal_enabled:
+                raise ValidationFailed(
+                    "this ticket's channel cannot carry files, and there is no requester "
+                    "portal to share them through"
+                )
     message = Message(
         ticket_id=ticket.id,
         kind=MessageKind.OUTBOUND if outbound else MessageKind.NOTE,
@@ -401,8 +609,17 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
     )
     ctx.session.add(message)
     await ctx.session.flush()
+    sent_files: list[Any] = []
+    if data.attachment_ids:
+        from zentral.services import attachments as files
+
+        sent_files = await files.link_to_reply(
+            ctx, ticket, message.id, data.attachment_ids, by_mail=by_mail
+        )
     if delivery == DeliveryStatus.PENDING:
         ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
+    if outbound:
+        sla.responded(ticket)
     if outbound and ticket.status == TicketStatus.NEW:
         ticket.status = TicketStatus.OPEN
     ticket.updated_at = utcnow()
@@ -411,7 +628,10 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
         "ticket",
         ticket.id,
         message_id=str(message.id),
+        files=len(sent_files),
     )
+    from zentral.services import attachments as files
+
     return MessageOut(
         id=message.id,
         kind=message.kind,
@@ -420,4 +640,133 @@ async def add_message(ctx: Ctx, ticket_id: int, data: MessageCreate) -> MessageO
         author_type="staff",
         delivery_status=message.delivery_status,
         created_at=message.created_at,
+        attachments=[files.out(ctx, a) for a in sent_files],
     )
+
+
+async def _channel_sends_files(ctx: Ctx, ticket: Ticket) -> bool:
+    if ticket.source_id is None:
+        return False
+    source = await ctx.session.get(IngestSource, ticket.source_id)
+    if source is None or not source.enabled:
+        return False
+    from zentral.connectors.base import Capability
+    from zentral.connectors.registry import capabilities_of
+
+    return Capability.SEND_FILES in capabilities_of(ctx.settings, source.connector)
+
+
+async def auto_close(ctx: Ctx, *, batch: int = 500) -> int:
+    """Close tickets that stayed resolved for ``auto_close_days``.
+
+    A resolved ticket reopens when the requester answers; a closed one does not
+    (their next message starts a new ticket). The grace period is the window in
+    which "that didn't fix it" still lands on the same ticket.
+    """
+    days = ctx.settings.auto_close_days
+    if days <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(days=days)
+    tickets = (
+        (
+            await ctx.session.scalars(
+                select(Ticket)
+                .where(Ticket.status == TicketStatus.RESOLVED, Ticket.resolved_at < cutoff)
+                .limit(batch)
+            )
+        )
+        .unique()
+        .all()
+    )
+    for ticket in tickets:
+        ticket.status = TicketStatus.CLOSED
+        ctx.audit("ticket.auto_closed", "ticket", ticket.id, after_days=days)
+    return len(tickets)
+
+
+MAX_MERGE_HOPS = 5
+
+
+async def follow_merges(ctx: Ctx, ticket: Ticket) -> Ticket:
+    """The ticket a merged ticket now lives on (bounded, in case of a cycle)."""
+    for _ in range(MAX_MERGE_HOPS):
+        if ticket.merged_into_id is None:
+            return ticket
+        target = await ctx.session.get(Ticket, ticket.merged_into_id)
+        if target is None:
+            return ticket
+        ticket = target
+    return ticket
+
+
+async def merge_ticket(ctx: Ctx, source_id: int, target_id: int) -> TicketOut:
+    """Fold a duplicate into another ticket.
+
+    The conversation moves to the target, the duplicate is closed and points at
+    it, and later replies on the duplicate's thread land on the target. Only
+    tickets from the same requester can be merged: merging two people's
+    requests would put one person's words on the other's ticket and send
+    replies to only one of them.
+    """
+    if source_id == target_id:
+        raise ValidationFailed("a ticket cannot be merged into itself")
+    source = await load_ticket(ctx, source_id)
+    target = await load_ticket(ctx, target_id)
+    ctx.require(P.TICKET_UPDATE, "ticket", str(source_id))
+    if source.merged_into_id is not None:
+        raise ValidationFailed("this ticket has already been merged")
+    if target.merged_into_id is not None:
+        raise ValidationFailed(
+            "the target ticket was itself merged; merge into the ticket it points to"
+        )
+    if source.scrubbed_at is not None or target.scrubbed_at is not None:
+        raise ValidationFailed("a ticket scrubbed under the retention policy cannot be merged")
+    if target.status == TicketStatus.CLOSED:
+        raise ValidationFailed("the target ticket is closed")
+    if source.requester_id is not None and source.requester_id != target.requester_id:
+        raise ValidationFailed("only tickets from the same requester can be merged")
+
+    moved = await ctx.session.execute(
+        update(Message).where(Message.ticket_id == source.id).values(ticket_id=target.id)
+    )
+    from zentral.services import attachments as files
+
+    await files.move(ctx, source.id, target.id)
+    count = int(getattr(moved, "rowcount", 0) or 0)
+    source_key, target_key = ticket_key(ctx, source.id), ticket_key(ctx, target.id)
+    ctx.session.add(
+        Message(
+            ticket_id=target.id,
+            kind=MessageKind.NOTE,
+            body=f"{source_key} was merged into this ticket ({count} messages moved).",
+            author_user_id=ctx.principal.subject,
+        )
+    )
+    ctx.session.add(
+        Message(
+            ticket_id=source.id,
+            kind=MessageKind.NOTE,
+            body=f"Merged into {target_key}. The conversation continues there.",
+            author_user_id=ctx.principal.subject,
+        )
+    )
+    target.tags = sorted(set(target.tags or []) | set(source.tags or []))
+    if source.first_response_at and not target.first_response_at:
+        target.first_response_at = source.first_response_at
+    if target.status in (TicketStatus.RESOLVED, TicketStatus.PENDING):
+        sla.status_changed(target, target.status, TicketStatus.OPEN, ctx.settings)
+        target.status = TicketStatus.OPEN
+        target.resolved_at = None
+    target.updated_at = utcnow()
+
+    sla.status_changed(source, source.status, TicketStatus.CLOSED, ctx.settings)
+    source.status = TicketStatus.CLOSED
+    source.resolved_at = source.resolved_at or utcnow()
+    source.merged_into_id = target.id
+    source.updated_at = utcnow()
+
+    ctx.audit("ticket.merged", "ticket", source.id, into=target.id, messages=count)
+    ctx.audit("ticket.merge_received", "ticket", target.id, source=source.id, messages=count)
+    await ctx.session.flush()
+    await ctx.session.refresh(target, ["team", "system"])
+    return await present_ticket(ctx, target)

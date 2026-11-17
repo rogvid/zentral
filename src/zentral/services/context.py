@@ -20,7 +20,7 @@ from zentral.config import Settings
 from zentral.db.models import Team, TeamMember, User, utcnow
 from zentral.db.session import SessionFactory
 from zentral.security.principal import Principal
-from zentral.security.rbac import Permission
+from zentral.security.rbac import Permission, Role
 from zentral.services.errors import PermissionDenied
 
 _USER_TOUCH_SECONDS = 3600
@@ -36,10 +36,20 @@ class Ctx:
     team_ids: frozenset[uuid.UUID] = frozenset()
     _events: list[PendingEvent] = field(default_factory=list)
 
+    @property
+    def is_ai_agent(self) -> bool:
+        """An AI agent is acting: anything over MCP, or an identity with the automation role.
+
+        People who object to automated processing are hidden from these callers.
+        """
+        return self.meta.channel == "mcp" or Role.AUTOMATION.value in self.principal.roles
+
     def can(self, permission: Permission) -> bool:
         return self.principal.can(permission)
 
-    def require(self, permission: Permission, resource_type: str = "", resource_id: str = "") -> None:
+    def require(
+        self, permission: Permission, resource_type: str = "", resource_id: str = ""
+    ) -> None:
         if not self.principal.can(permission):
             raise PermissionDenied(permission.value, resource_type, resource_id)
 
@@ -52,12 +62,15 @@ class Ctx:
         outcome: str = "success",
         **details: Any,
     ) -> None:
-        self._events.append(
-            PendingEvent(action, resource_type, str(resource_id), outcome, details)
-        )
+        self._events.append(PendingEvent(action, resource_type, str(resource_id), outcome, details))
 
     async def commit(self) -> None:
         """Commit the transaction together with its audit events."""
+        if not self._events:
+            # Nothing to chain: do not hold the chain lock (on SQLite an in-process
+            # lock) while this transaction's own writes block other writers.
+            await self.session.commit()
+            return
         async with self.trail.serialized(self.session):
             await self.trail.write(self.session, self._events, self.principal, self.meta)
             self._events.clear()
@@ -86,7 +99,7 @@ async def resolve_team_ids(session: AsyncSession, principal: Principal) -> froze
 
 async def touch_user(session: AsyncSession, principal: Principal) -> None:
     """Mirror the caller's directory attributes so they can be shown as assignee/author."""
-    if principal.kind == "system":
+    if principal.kind in ("system", "requester"):
         return
     user = await session.get(User, principal.subject)
     now = utcnow()

@@ -13,36 +13,31 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from zentral import __version__
 from zentral.api.deps import request_meta
-from zentral.api.middleware import HardeningMiddleware
+from zentral.api.middleware import HardeningMiddleware, McpPathMiddleware
 from zentral.api.ratelimit import RateLimiter
-from zentral.api.routes import admin, compliance, hooks, meta, tickets
+from zentral.api.routes import admin, compliance, hooks, meta, notifications, portal, tickets
+from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
 from zentral.logging import configure_logging
 from zentral.mcp_server import build_mcp, mcp_asgi_app
 from zentral.runtime import Runtime, build_runtime
-from zentral.security.devauth import PERSONAS, LocalIssuer
-from zentral.security.entra import TokenValidator
+from zentral.security.devauth import LocalIssuer
+from zentral.security.tokens import Authenticator, TokenValidator
 from zentral.services.context import record_denied
 from zentral.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 log = structlog.get_logger(__name__)
 
 
-class _PersonaIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    persona: str
-
-
 def create_app(
     settings: Settings | None = None,
     *,
     runtime: Runtime | None = None,
-    validator: TokenValidator | None = None,
+    validator: Authenticator | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
@@ -52,11 +47,11 @@ def create_app(
     dev_issuer: LocalIssuer | None = None
     if validator is None:
         if settings.auth_mode == "dev":
-            dev_issuer = LocalIssuer()
+            dev_issuer = LocalIssuer(issuer=settings.issuer)
             validator = dev_issuer.validator()
             log.warning("dev_auth_enabled", note="anyone can obtain a token; never expose this")
         else:
-            validator = TokenValidator.for_entra(settings, runtime.http)
+            validator = TokenValidator.for_settings(settings, runtime.http)
 
     mcp = build_mcp(runtime, validator, limiter)
     mcp_app = mcp_asgi_app(mcp, runtime)
@@ -78,9 +73,9 @@ def create_app(
     app.state.runtime = runtime
     app.state.validator = validator
     app.state.limiter = limiter
-    app.state.dev_personas = list(PERSONAS) if dev_issuer else []
 
     # --- middleware (outermost last) ----------------------------------------------
+    app.add_middleware(McpPathMiddleware)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -90,25 +85,37 @@ def create_app(
             allow_credentials=False,
             max_age=600,
         )
-    hosts = sorted({urlsplit(settings.public_base_url).hostname or "", *settings.allowed_hosts} - {""})
+    hosts = sorted(
+        {urlsplit(settings.public_base_url).hostname or "", *settings.allowed_hosts} - {""}
+    )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
     app.add_middleware(
-        HardeningMiddleware, max_body_bytes=settings.max_body_bytes, hsts=settings.is_production
+        HardeningMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+        # Room for one file, or a webhook with up to three base64-encoded files.
+        upload_body_bytes=(
+            settings.max_body_bytes + 3 * (settings.attachment_max_bytes * 4 // 3 + 4)
+            if settings.attachments_enabled
+            else 0
+        ),
+        hsts=settings.is_production,
+        connect_origins=meta.sign_in_origins(settings),
     )
 
     # --- routes -----------------------------------------------------------------------
     app.include_router(meta.router)
-    for router in (tickets.router, admin.router, compliance.router, hooks.router):
+    for router in (
+        tickets.router,
+        notifications.router,
+        admin.router,
+        compliance.router,
+        hooks.router,
+        portal.router,
+    ):
         app.include_router(router, prefix="/api/v1")
 
     if dev_issuer is not None:
-        issuer = dev_issuer
-
-        @app.post("/api/v1/dev/token", include_in_schema=False)
-        async def dev_token(data: _PersonaIn) -> dict[str, str]:
-            if data.persona not in PERSONAS:
-                raise HTTPException(404, "unknown persona")
-            return {"access_token": issuer.issue_persona(data.persona)}
+        app.include_router(build_dev_idp(dev_issuer, settings))
 
     @app.get("/.well-known/oauth-protected-resource/mcp", include_in_schema=False)
     async def protected_resource_metadata() -> dict[str, Any]:
@@ -116,8 +123,8 @@ def create_app(
         base = settings.public_base_url.rstrip("/")
         return {
             "resource": f"{base}/mcp",
-            "authorization_servers": [settings.entra_issuer],
-            "scopes_supported": [f"api://{settings.entra_api_client_id}/{settings.entra_required_scope}"],
+            "authorization_servers": [settings.issuer],
+            "scopes_supported": meta.sign_in_scopes(settings),
             "bearer_methods_supported": ["header"],
         }
 
@@ -167,7 +174,7 @@ def create_app(
     if static_dir and (static_dir / "index.html").is_file():
         root = static_dir.resolve()
 
-        @app.get("/{path:path}", include_in_schema=False)
+        @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa(path: str) -> FileResponse:
             if path.startswith(("api/", "mcp", ".well-known/")):
                 raise HTTPException(404)
@@ -175,6 +182,11 @@ def create_app(
             # Path traversal guard: only files inside the static root are served.
             if path and candidate.is_file() and candidate.is_relative_to(root):
                 return FileResponse(candidate)
+            if (path == "portal" or path.startswith("portal/")) and (
+                root / "portal.html"
+            ).is_file():
+                # The requester portal is its own small page, without staff sign-in.
+                return FileResponse(root / "portal.html", headers={"Cache-Control": "no-cache"})
             return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app

@@ -34,9 +34,9 @@ from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
 from zentral.runtime import Runtime
 from zentral.schemas import MessageCreate, TicketCreate, TicketUpdate
-from zentral.security.entra import AuthenticationError, TokenValidator
 from zentral.security.principal import Principal
-from zentral.services import admin, tickets
+from zentral.security.tokens import AuthenticationError, Authenticator
+from zentral.services import admin, insights, templates, tickets
 from zentral.services.context import Ctx, record_denied, resolve_team_ids, touch_user
 from zentral.services.errors import DomainError, NotFound, PermissionDenied
 from zentral.services.tickets import TicketFilter
@@ -61,7 +61,7 @@ Important:
 
 
 class _Verifier(TokenVerifier):
-    def __init__(self, validator: TokenValidator) -> None:
+    def __init__(self, validator: Authenticator) -> None:
         self._validator = validator
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -71,7 +71,7 @@ class _Verifier(TokenVerifier):
             log.warning("mcp_authentication_failed", reason=str(exc))
             return None
         return AccessToken(
-            token="",  # the raw token is not needed downstream; do not keep it around
+            token="",  # the raw token is not needed downstream; do not keep it around # nosec B106
             client_id=principal.client_app_id or principal.subject,
             scopes=[],
             subject=principal.subject,
@@ -79,18 +79,17 @@ class _Verifier(TokenVerifier):
         )
 
 
-def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter) -> MCPServer:
+def build_mcp(runtime: Runtime, validator: Authenticator, limiter: RateLimiter) -> MCPServer:
     settings = runtime.settings
     base = settings.public_base_url.rstrip("/")
-    issuer = settings.entra_issuer if settings.auth_mode == "entra" else f"{base}/dev-issuer"
     mcp = MCPServer(
         name="zentral",
         title="Zentral Service Desk",
         instructions=INSTRUCTIONS,
         token_verifier=_Verifier(validator),
         auth=AuthSettings(
-            issuer_url=issuer,  # type: ignore[arg-type]
-            resource_server_url=f"{base}/mcp",  # type: ignore[arg-type]
+            issuer_url=settings.issuer,
+            resource_server_url=f"{base}/mcp",
             # The verifier validates the audience itself (Entra does not use RFC 8707).
             validate_token_resource=False,
         ),
@@ -120,9 +119,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                 await ctx.commit()
             except PermissionDenied as exc:
                 await session.rollback()
-                await record_denied(
-                    runtime.sessions, runtime.trail, settings, principal, meta, exc
-                )
+                await record_denied(runtime.sessions, runtime.trail, settings, principal, meta, exc)
                 if exc.permission == "ticket:scope":
                     raise ToolError("Ticket not found.") from None
                 raise ToolError(
@@ -154,6 +151,10 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         priority: Priority | None = None,
         category: str | None = None,
         team_id: Annotated[str | None, Field(description="Team UUID.")] = None,
+        system_id: Annotated[
+            str | None,
+            Field(description="Only tickets about this system (UUID from list_systems)."),
+        ] = None,
         unassigned: Annotated[bool, Field(description="Only tickets with no assignee.")] = False,
         query: Annotated[
             str | None, Field(description="Text to find in the subject, or a ticket key.")
@@ -170,6 +171,7 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
                     priority=priority,
                     category=category,
                     team_id=uuid.UUID(team_id) if team_id else None,
+                    system_id=uuid.UUID(system_id) if system_id else None,
                     unassigned=unassigned,
                     q=query,
                     limit=limit,
@@ -196,12 +198,19 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         priority: Priority = "normal",
         category: str | None = None,
         team_id: str | None = None,
+        system_id: Annotated[
+            str | None, Field(description="System the ticket concerns (UUID from list_systems).")
+        ] = None,
     ) -> dict[str, Any]:
         """Open a new ticket on behalf of the service desk (no external requester)."""
         async with tool_ctx() as ctx:
             data = TicketCreate(
-                subject=subject, body=body, priority=priority, category=category,  # type: ignore[arg-type]
+                subject=subject,
+                body=body,
+                priority=priority,
+                category=category,
                 team_id=uuid.UUID(team_id) if team_id else None,
+                system_id=uuid.UUID(system_id) if system_id else None,
             )
             return (await tickets.create_ticket(ctx, data)).model_dump(mode="json")
 
@@ -213,6 +222,9 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
         category: str | None = None,
         tags: list[str] | None = None,
         team_id: Annotated[str | None, Field(description="Route to this team (UUID).")] = None,
+        system_id: Annotated[
+            str | None, Field(description="System the ticket concerns (UUID from list_systems).")
+        ] = None,
         assignee_id: Annotated[str | None, Field(description="Assign to this user id.")] = None,
     ) -> dict[str, Any]:
         """Change ticket fields. Only the arguments you pass are changed."""
@@ -220,8 +232,13 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
             supplied = {
                 k: v
                 for k, v in {
-                    "status": status, "priority": priority, "category": category,
-                    "tags": tags, "team_id": team_id, "assignee_id": assignee_id,
+                    "status": status,
+                    "priority": priority,
+                    "category": category,
+                    "tags": tags,
+                    "team_id": team_id,
+                    "system_id": system_id,
+                    "assignee_id": assignee_id,
                 }.items()
                 if v is not None
             }
@@ -232,7 +249,9 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
     async def add_note(ticket_id: int, body: str) -> dict[str, Any]:
         """Add an internal note to a ticket. Notes are never sent to the requester."""
         async with tool_ctx() as ctx:
-            message = await tickets.add_message(ctx, ticket_id, MessageCreate(kind="note", body=body))
+            message = await tickets.add_message(
+                ctx, ticket_id, MessageCreate(kind="note", body=body)
+            )
             return message.model_dump(mode="json")
 
     @mcp.tool()
@@ -245,12 +264,47 @@ def build_mcp(runtime: Runtime, validator: TokenValidator, limiter: RateLimiter)
             return message.model_dump(mode="json")
 
     @mcp.tool()
+    async def merge_tickets(duplicate_ticket_id: int, into_ticket_id: int) -> dict[str, Any]:
+        """Fold a duplicate ticket into another from the same requester.
+
+        The conversation moves to the target ticket and the duplicate is closed.
+        Returns the target ticket.
+        """
+        async with tool_ctx() as ctx:
+            merged = await tickets.merge_ticket(ctx, duplicate_ticket_id, into_ticket_id)
+            return merged.model_dump(mode="json")
+
+    @mcp.tool()
+    async def list_saved_replies() -> list[dict[str, Any]]:
+        """Saved replies you may start from. Adapt them; never send one unread."""
+        async with tool_ctx() as ctx:
+            return [
+                {"name": t.name, "body": t.body, "team": t.team_name}
+                for t in await templates.list_templates(ctx)
+            ]
+
+    @mcp.tool()
     async def list_teams() -> list[dict[str, Any]]:
         """List teams (queues) tickets can be routed to."""
         async with tool_ctx() as ctx:
+            return [{"id": str(t.id), "name": t.name} for t in await admin.list_teams(ctx)]
+
+    @mcp.tool()
+    async def list_systems() -> list[dict[str, Any]]:
+        """List the business systems a ticket can concern (payments, HR portal, …)."""
+        async with tool_ctx() as ctx:
             return [
-                {"id": str(t.id), "name": t.name} for t in await admin.list_teams(ctx)
+                {"id": str(s.id), "key": s.key, "name": s.name, "description": s.description}
+                for s in await admin.list_systems(ctx)
             ]
+
+    @mcp.tool()
+    async def get_insights(
+        days: Annotated[int, Field(ge=7, le=365, description="Look-back period in days.")] = 30,
+    ) -> dict[str, Any]:
+        """Volumes, sources and target attainment for the tickets you can see. Aggregates only."""
+        async with tool_ctx() as ctx:
+            return (await insights.insights(ctx, days)).model_dump(mode="json")
 
     @mcp.tool()
     async def list_categories() -> list[str]:

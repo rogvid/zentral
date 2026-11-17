@@ -7,7 +7,7 @@ from typing import Literal
 
 from zentral.security.rbac import Permission, permissions_for
 
-PrincipalKind = Literal["user", "service", "system"]
+PrincipalKind = Literal["user", "service", "system", "requester"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,4 +60,16 @@ def system_principal(component: str) -> Principal:
         roles=frozenset({"system"}),
         display_name=f"Zentral {component}",
         permissions=frozenset(Permission),
+    )
+
+
+def requester_principal(contact_id: object) -> Principal:
+    """A requester signed in to the portal. Holds no staff permission at all:
+    portal operations check ownership of each ticket themselves."""
+    return Principal(
+        subject=f"contact:{contact_id}",
+        tenant_id="",
+        kind="requester",
+        roles=frozenset(),
+        display_name="Requester",
     )

@@ -9,16 +9,20 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from zentral.connectors.base import Capability
+from zentral.connectors.base import Capability, ConnectorError
 from zentral.connectors.registry import ConnectorRegistry
-from zentral.db.models import AutomationRule, IngestSource, Team, TeamMember, User
+from zentral.db.models import AutomationRule, IngestSource, System, Team, TeamMember, User
+from zentral.runtime import Runtime
 from zentral.schemas import (
+    DiagnosticOut,
     RuleIn,
     RuleOut,
     SourceCreated,
     SourceIn,
     SourceOut,
     SourceUpdate,
+    SystemIn,
+    SystemOut,
     TeamIn,
     TeamOut,
     UserOut,
@@ -107,6 +111,71 @@ async def list_users(ctx: Ctx) -> list[UserOut]:
     return [UserOut.model_validate(u) for u in users]
 
 
+# --- systems ------------------------------------------------------------------------
+
+
+async def list_systems(ctx: Ctx, *, include_inactive: bool = False) -> list[SystemOut]:
+    """The system catalogue is needed by anyone who works with tickets."""
+    if not (ctx.can(P.TICKET_READ) or ctx.can(P.SYSTEM_MANAGE)):
+        raise PermissionDenied(P.TICKET_READ.value, "system")
+    stmt = select(System).order_by(System.name)
+    if not (include_inactive and ctx.can(P.SYSTEM_MANAGE)):
+        stmt = stmt.where(System.active.is_(True))
+    return [SystemOut.model_validate(s) for s in (await ctx.session.scalars(stmt)).all()]
+
+
+async def _check_system_refs(ctx: Ctx, data: SystemIn) -> None:
+    if data.default_team_id and await ctx.session.get(Team, data.default_team_id) is None:
+        raise ValidationFailed("unknown team")
+
+
+def _system_fields(data: SystemIn) -> dict[str, Any]:
+    fields = data.model_dump()
+    for name in ("sla_response_hours", "sla_resolve_hours"):
+        fields[name] = {str(k): float(v) for k, v in fields[name].items()}
+    return fields
+
+
+async def create_system(ctx: Ctx, data: SystemIn) -> SystemOut:
+    ctx.require(P.SYSTEM_MANAGE, "system")
+    await _check_system_refs(ctx, data)
+    system = System(**_system_fields(data))
+    ctx.session.add(system)
+    try:
+        await ctx.session.flush()
+    except IntegrityError as exc:
+        raise Conflict("a system with this key already exists") from exc
+    ctx.audit("system.created", "system", system.id, key=system.key)
+    return SystemOut.model_validate(system)
+
+
+async def update_system(ctx: Ctx, system_id: uuid.UUID, data: SystemIn) -> SystemOut:
+    ctx.require(P.SYSTEM_MANAGE, "system", str(system_id))
+    system = await ctx.session.get(System, system_id)
+    if system is None:
+        raise NotFound("system")
+    await _check_system_refs(ctx, data)
+    for field, value in _system_fields(data).items():
+        setattr(system, field, value)
+    try:
+        await ctx.session.flush()
+    except IntegrityError as exc:
+        raise Conflict("a system with this key already exists") from exc
+    ctx.audit("system.updated", "system", system.id, key=system.key, active=system.active)
+    return SystemOut.model_validate(system)
+
+
+async def delete_system(ctx: Ctx, system_id: uuid.UUID) -> None:
+    """Remove a system. Tickets keep existing and simply lose the link; to
+    preserve history, deactivate the system instead."""
+    ctx.require(P.SYSTEM_MANAGE, "system", str(system_id))
+    system = await ctx.session.get(System, system_id)
+    if system is None:
+        raise NotFound("system")
+    await ctx.session.delete(system)
+    ctx.audit("system.deleted", "system", system_id, key=system.key)
+
+
 # --- ingest sources ---------------------------------------------------------------
 
 
@@ -121,10 +190,15 @@ def _source_out(ctx: Ctx, source: IngestSource, registry: ConnectorRegistry) -> 
         connector=source.connector,
         config=source.config,
         default_team_id=source.default_team_id,
+        default_system_id=source.default_system_id,
         enabled=source.enabled,
         has_secrets=bool(source.secrets),  # secrets are write-only: never returned
         has_token=source.token_hash is not None,
         hook_url=hook,
+        capabilities=sorted(c.value for c in klass.capabilities) if klass else [],
+        last_ok_at=source.last_ok_at,
+        last_error=source.last_error,
+        last_error_at=source.last_error_at,
         created_at=source.created_at,
     )
 
@@ -158,7 +232,7 @@ async def create_source(ctx: Ctx, registry: ConnectorRegistry, data: SourceIn) -
     ctx.require(P.SOURCE_MANAGE, "source")
     config = _validate_source(registry, data.connector, data.config, data.secrets)
     klass = registry.get(data.connector)
-    assert klass is not None  # noqa: S101 - established by _validate_source
+    assert klass is not None
     token, token_hash = new_ingest_token() if klass.uses_ingest_token else (None, None)
     source = IngestSource(
         name=data.name,
@@ -167,17 +241,16 @@ async def create_source(ctx: Ctx, registry: ConnectorRegistry, data: SourceIn) -
         secrets=dict(data.secrets) or None,
         token_hash=token_hash,
         default_team_id=data.default_team_id,
+        default_system_id=data.default_system_id,
         enabled=data.enabled,
     )
     ctx.session.add(source)
     try:
         await ctx.session.flush()
     except IntegrityError as exc:
-        raise Conflict("a source with this name already exists") from exc
+        raise Conflict("source name already exists, or unknown team/system") from exc
     ctx.audit("source.created", "source", source.id, connector=source.connector)
-    return SourceCreated(
-        **_source_out(ctx, source, registry).model_dump(), ingest_token=token
-    )
+    return SourceCreated(**_source_out(ctx, source, registry).model_dump(), ingest_token=token)
 
 
 async def _load_source(ctx: Ctx, source_id: uuid.UUID) -> IngestSource:
@@ -194,18 +267,53 @@ async def update_source(
     source = await _load_source(ctx, source_id)
     fields = data.model_fields_set
     config = data.config if "config" in fields and data.config is not None else source.config
-    secrets = (
-        data.secrets if "secrets" in fields and data.secrets is not None else source.secrets or {}
-    )
+    # Secrets are write-only: a blank value means "keep what is stored".
+    secrets = dict(source.secrets or {})
+    if "secrets" in fields and data.secrets is not None:
+        secrets.update({k: v for k, v in data.secrets.items() if v})
     source.config = _validate_source(registry, source.connector, config, secrets)
     if "secrets" in fields and data.secrets is not None:
-        source.secrets = dict(data.secrets) or None
+        source.secrets = secrets or None
+    # A changed configuration deserves a fresh verdict.
+    source.last_error, source.last_error_at = None, None
     if "default_team_id" in fields:
         source.default_team_id = data.default_team_id
+    if "default_system_id" in fields:
+        source.default_system_id = data.default_system_id
     if "enabled" in fields and data.enabled is not None:
         source.enabled = data.enabled
     ctx.audit("source.updated", "source", source.id, fields=sorted(fields))
     return _source_out(ctx, source, registry)
+
+
+async def test_source(ctx: Ctx, runtime: Runtime, source_id: uuid.UUID) -> list[DiagnosticOut]:
+    """Run the connector's self-test (credentials, reachability, scope)."""
+    source = await _load_source(ctx, source_id)
+    connector = runtime.connector_for(source)
+    if connector is None:
+        raise ValidationFailed("connector is not installed or not enabled")
+    try:
+        out = [
+            DiagnosticOut.model_validate(r, from_attributes=True)
+            for r in await connector.diagnose()
+        ]
+    except ConnectorError as exc:
+        out = [DiagnosticOut(name="Self-test", status="fail", detail=str(exc)[:300])]
+    if not out:
+        out = [
+            DiagnosticOut(
+                name="Configuration", status="ok", detail="valid; this connector has no live checks"
+            )
+        ]
+    failed = any(d.status == "fail" for d in out)
+    ctx.audit(
+        "source.tested",
+        "source",
+        source.id,
+        outcome="failure" if failed else "success",
+        checks={d.name: d.status for d in out},
+    )
+    return out
 
 
 async def rotate_source_token(

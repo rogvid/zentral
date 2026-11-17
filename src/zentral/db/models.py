@@ -26,9 +26,9 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, deferred, mapped_column, relationship
 
-from zentral.db.types import EncryptedJSON, EncryptedText, UTCDateTime
+from zentral.db.types import EncryptedBytes, EncryptedJSON, EncryptedText, UTCDateTime
 
 
 def utcnow() -> datetime:
@@ -105,6 +105,30 @@ class TeamMember(Base):
     user_id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
 
 
+class System(Base):
+    """A business system or service that tickets are about (payments, HR portal, …)."""
+
+    __tablename__ = "systems"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # Stable machine identifier used by integrations, e.g. "payments".
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(500), default="")
+    # Words that identify the system in free text (used by AI and the rules fallback).
+    keywords: Mapped[list[str]] = mapped_column(default=list)
+    # Tickets about this system go to this team unless something else routed them.
+    default_team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Per-priority hours that replace the global targets for tickets about this
+    # system, e.g. {"urgent": 0.5}. Priorities not listed use the global value.
+    sla_response_hours: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    sla_resolve_hours: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class Contact(Base):
     """A requester (data subject)."""
 
@@ -117,6 +141,9 @@ class Contact(Base):
     display_name: Mapped[str | None] = mapped_column(EncryptedText)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     erased_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # The person objected to automated analysis (GDPR Art. 21): their tickets
+    # are never sent to a model and are hidden from AI agents.
+    ai_objected_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class IngestSource(Base):
@@ -133,8 +160,16 @@ class IngestSource(Base):
     default_team_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL")
     )
+    default_system_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("systems.id", ondelete="SET NULL")
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     cursor: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Health of polling/delivery, shown to administrators. Error text comes from
+    # ConnectorError messages only, which never contain content.
+    last_ok_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    last_error_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
@@ -152,6 +187,9 @@ class Ticket(Base):
         ForeignKey("teams.id", ondelete="SET NULL"), index=True
     )
     assignee_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    system_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("systems.id", ondelete="SET NULL"), index=True
+    )
     requester_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("contacts.id", ondelete="SET NULL"), index=True
     )
@@ -159,9 +197,13 @@ class Ticket(Base):
         ForeignKey("ingest_sources.id", ondelete="SET NULL")
     )
     external_thread_id: Mapped[str | None] = mapped_column(String(64))  # blind index
+    # The channel's own conversation reference, kept (encrypted) so replies can
+    # be posted into the same thread.
+    thread_ref: Mapped[str | None] = mapped_column(EncryptedText)
 
     ai_category: Mapped[str | None] = mapped_column(String(64))
     ai_priority: Mapped[str | None] = mapped_column(String(16))
+    ai_system_key: Mapped[str | None] = mapped_column(String(64))
     ai_confidence: Mapped[float | None] = mapped_column(Float)
     ai_summary: Mapped[str | None] = mapped_column(EncryptedText)
     ai_model: Mapped[str | None] = mapped_column(String(128))
@@ -171,8 +213,26 @@ class Ticket(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     scrubbed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
+    # Service-level targets (see zentral.services.sla).
+    response_due_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    resolve_due_at: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
+    first_response_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    paused_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    # The furthest escalation sent per target ("at_risk", "breached"); cleared
+    # whenever the targets are re-planned, so new deadlines warn again.
+    response_alert: Mapped[str | None] = mapped_column(String(16))
+    resolve_alert: Mapped[str | None] = mapped_column(String(16))
+
+    # Set when this ticket was folded into another; replies follow it there.
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tickets.id", ondelete="SET NULL"), index=True
+    )
+
     requester: Mapped[Contact | None] = relationship(lazy="joined")
     team: Mapped[Team | None] = relationship(lazy="joined")
+    system: Mapped[System | None] = relationship(lazy="joined")
     messages: Mapped[list[Message]] = relationship(
         back_populates="ticket", order_by="Message.created_at", lazy="raise"
     )
@@ -201,6 +261,106 @@ class Message(Base):
     ticket: Mapped[Ticket] = relationship(back_populates="messages")
 
     __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_messages_dedupe"),)
+
+
+class Notification(Base):
+    """Something a staff member should know about a ticket.
+
+    Deliberately content-free: a kind and a ticket number. Whoever opens the
+    ticket goes through the normal permission checks and audit trail.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (Index("ix_notifications_user", "user_id", "created_at"),)
+
+
+class AttachmentStatus(StrEnum):
+    SCANNING = "scanning"  # stored, not yet cleared by the malware scanner
+    CLEAN = "clean"  # may be opened
+    BLOCKED = "blocked"  # malware found: content destroyed, metadata kept
+
+
+class Attachment(Base):
+    """A file on a ticket (screenshots, logs, PDFs).
+
+    The content is checked by its bytes against an allow-list, stripped of
+    metadata (photo EXIF/GPS, text chunks), encrypted, and malware-scanned
+    before anyone can open it. Opening one needs ``ticket:read_pii``.
+    """
+
+    __tablename__ = "attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), index=True
+    )
+    filename: Mapped[str] = mapped_column(EncryptedText)  # names can be personal data
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default=AttachmentStatus.SCANNING)
+    # Loaded only when the content is actually needed (downloads, scanning).
+    data: Mapped[bytes | None] = deferred(mapped_column(EncryptedBytes))
+    author_user_id: Mapped[str | None] = mapped_column(String(64))
+    author_contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    scanned_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class PortalToken(Base):
+    """A requester's sign-in link or portal session. Only a hash is stored."""
+
+    __tablename__ = "portal_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    contact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(8))  # link | session
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Rating(Base):
+    """How the requester rated the help they got (one per ticket)."""
+
+    __tablename__ = "ratings"
+
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    score: Mapped[int] = mapped_column(Integer)  # 1 (poor) … 5 (excellent)
+    comment: Mapped[str | None] = mapped_column(EncryptedText)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ReplyTemplate(Base):
+    """A saved reply agents can start from. Global, or limited to one team."""
+
+    __tablename__ = "reply_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(EncryptedText)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 
 class AutomationRule(Base):
@@ -255,3 +415,24 @@ class AuditEvent(Base):
     hash: Mapped[str] = mapped_column(String(64))
 
     __table_args__ = (Index("ix_audit_resource", "resource_type", "resource_id"),)
+
+
+class AuditCheckpoint(Base):
+    """Where the in-database audit chain resumes after older events were archived.
+
+    Written in the same transaction that removes the archived events. Each
+    checkpoint is signed with the audit key and chained to the previous one,
+    so a forged checkpoint (to hide a deletion) fails verification.
+    """
+
+    __tablename__ = "audit_checkpoints"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    hash: Mapped[str] = mapped_column(String(64))  # hash of event ``seq``
+    first_seq: Mapped[int] = mapped_column(Integer)
+    events: Mapped[int] = mapped_column(Integer)
+    archive_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(64))
+    prev_signature: Mapped[str] = mapped_column(String(64))
+    signature: Mapped[str] = mapped_column(String(64))

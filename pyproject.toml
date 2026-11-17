@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Zentral — a privacy-first, AI-friendly service desk"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -20,7 +19,7 @@ dependencies = [
     "structlog>=24.4",
     "mcp>=1.20",
     "typer>=0.15",
-    "email-validator>=2.4.0",
+    "python-multipart>=0.0.33",
 ]
 
 [project.optional-dependencies]
@@ -77,9 +76,13 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "C4", "SIM", "RUF", "PT",
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S311"]
+"tests/**" = ["S105", "S106", "S311", "S608", "E501", "PT018", "PT011", "SLF001", "RUF001", "RUF003"]
 "src/zentral/api/**" = ["B008"]
 "src/zentral/cli.py" = ["B008"]
+"scripts/**" = ["E501", "S311"]  # demo data, not cryptography
+# Long, human-readable field descriptions shown in the admin UI.
+"src/zentral/connectors/email_graph.py" = ["E501"]
+"src/zentral/api/routes/devidp.py" = ["E501"]  # embedded stylesheet
 
 [tool.mypy]
 python_version = "3.12"
@@ -90,3 +93,9 @@ files = ["src"]
 [tool.coverage.run]
 source = ["src/zentral"]
 branch = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+# B101: asserts are not used for control flow in src. B608 is reviewed per call site
+# (identifiers come from compile-time constants, never from input).
+skips = ["B101"]

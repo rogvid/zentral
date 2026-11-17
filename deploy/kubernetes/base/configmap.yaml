@@ -1,0 +1,17 @@
+# Non-secret configuration. Secrets (database URL, keys) live in the Secret
+# `zentral-secrets`, which you create yourself or sync from a vault
+# (External Secrets Operator, CSI driver, sealed-secrets).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zentral-config
+data:
+  ZENTRAL_ENV: production
+  ZENTRAL_PUBLIC_BASE_URL: https://servicedesk.example.com
+  ZENTRAL_ALLOWED_HOSTS: servicedesk.example.com
+  ZENTRAL_AUTH_MODE: entra
+  ZENTRAL_ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000"
+  ZENTRAL_ENTRA_API_CLIENT_ID: "00000000-0000-0000-0000-000000000000"
+  ZENTRAL_ENTRA_SPA_CLIENT_ID: "00000000-0000-0000-0000-000000000000"
+  ZENTRAL_AI_PROVIDER: rules
+  ZENTRAL_RETENTION_DAYS: "365"

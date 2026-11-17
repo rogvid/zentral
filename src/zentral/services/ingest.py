@@ -9,24 +9,35 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from zentral.connectors.base import InboundMessage
 from zentral.db.models import (
+    DeliveryStatus,
     IngestSource,
     Job,
     Message,
     MessageKind,
+    System,
     Ticket,
     TicketPriority,
     TicketStatus,
     utcnow,
 )
 from zentral.security.crypto import get_cipher
+from zentral.services import attachments, notifications, sla
 from zentral.services.context import Ctx
-from zentral.services.tickets import get_or_create_contact, ticket_key
+from zentral.services.errors import ValidationFailed
+from zentral.services.tickets import (
+    apply_system,
+    follow_merges,
+    get_or_create_contact,
+    ticket_key,
+)
 from zentral.text import clean_text, single_line
+
+MAX_INBOUND_ATTACHMENTS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,12 +86,19 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             requester_id=contact.id if contact else None,
             source_id=source.id,
             external_thread_id=thread_hash,
+            thread_ref=msg.thread_id[:500] if msg.thread_id else None,
             tags=[],
         )
+        system = await _resolve_system(ctx, source, msg)
+        if system is not None:
+            apply_system(ticket, system)
         ctx.session.add(ticket)
         await ctx.session.flush()
+        sla.refresh_targets(ticket, ctx.settings)
     else:
         if ticket.status in (TicketStatus.RESOLVED, TicketStatus.PENDING):
+            # The requester answered: the ball is back with the desk.
+            sla.status_changed(ticket, ticket.status, TicketStatus.OPEN, ctx.settings)
             ticket.status = TicketStatus.OPEN
             ticket.resolved_at = None
         ticket.updated_at = utcnow()
@@ -110,8 +128,32 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             await ctx.session.delete(ticket)
         return IngestOutcome(winner, ticket_key(ctx, winner), created=False, duplicate=True)
 
+    for item in msg.attachments[:MAX_INBOUND_ATTACHMENTS]:
+        try:
+            await attachments.add(
+                ctx,
+                ticket,
+                item.filename,
+                item.data,
+                message_id=message.id,
+                author_contact_id=contact.id if contact else None,
+            )
+        except ValidationFailed as exc:
+            # A refused file never costs the requester their message.
+            ctx.audit(
+                "attachment.dropped",
+                "ticket",
+                ticket.id,
+                outcome="failure",
+                reason=str(exc)[:80],
+                size=len(item.data),
+            )
+    if not created and ticket.assignee_id:
+        notifications.notify(ctx, {ticket.assignee_id}, "requester_replied", ticket.id)
     if created:
         ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
+        if contact is not None and contact.email and source.config.get("acknowledge_new_tickets"):
+            await _acknowledge(ctx, source, ticket)
     ctx.audit(
         "ticket.ingested" if created else "ticket.message_received",
         "ticket",
@@ -120,6 +162,52 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
         connector=source.connector,
     )
     return IngestOutcome(ticket.id, ticket_key(ctx, ticket.id), created=created)
+
+
+DEFAULT_ACKNOWLEDGEMENT = (
+    "Thank you for getting in touch. Your request has been logged as {ticket_key}, "
+    "and someone from the service desk will get back to you.\n\n"
+    "To add information, reply to this message and keep {ticket_key} in the subject."
+)
+
+
+async def _acknowledge(ctx: Ctx, source: IngestSource, ticket: Ticket) -> None:
+    """Tell the requester their request arrived, and its reference.
+
+    Queued like any reply (so it is delivered, retried and audited the same
+    way) and visible in the conversation. It is authored by Zentral itself and
+    deliberately does not count as the desk's first response.
+    """
+    template = str(source.config.get("acknowledgement_text") or DEFAULT_ACKNOWLEDGEMENT)
+    # str.replace, not str.format: the template is administrator text and must
+    # not be able to reach anything but this one placeholder.
+    body = template.replace("{ticket_key}", ticket_key(ctx, ticket.id))[:5000]
+    message = Message(
+        ticket_id=ticket.id,
+        kind=MessageKind.OUTBOUND,
+        body=body,
+        source_id=source.id,
+        delivery_status=DeliveryStatus.PENDING,
+    )
+    ctx.session.add(message)
+    await ctx.session.flush()
+    ctx.session.add(Job(kind="send_message", payload={"message_id": str(message.id)}))
+    ctx.audit("ticket.acknowledged", "ticket", ticket.id, message_id=str(message.id))
+
+
+async def _resolve_system(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> System | None:
+    """The sender's explicit hint wins; otherwise the channel's configured default."""
+    if msg.system:
+        system = await ctx.session.scalar(
+            select(System).where(System.key == msg.system.strip().lower(), System.active.is_(True))
+        )
+        if system is not None:
+            return system
+    if source.default_system_id is not None:
+        system = await ctx.session.get(System, source.default_system_id)
+        if system is not None and system.active:
+            return system
+    return None
 
 
 async def _find_thread(
@@ -135,24 +223,30 @@ async def _find_thread(
     match = re.search(rf"\[{re.escape(ctx.settings.ticket_prefix)}-(\d{{1,12}})\]", subject)
     if match and contact_id is not None:
         ticket = await ctx.session.get(Ticket, int(match.group(1)))
-        if (
-            ticket is not None
-            and ticket.requester_id == contact_id
-            and ticket.status != TicketStatus.CLOSED
-            and ticket.scrubbed_at is None
-        ):
-            return ticket
-    # 2. Same external conversation on the same (authenticated) source.
+        if ticket is not None and ticket.requester_id == contact_id:
+            ticket = await follow_merges(ctx, ticket)
+            if ticket.requester_id == contact_id and _open(ticket):
+                return ticket
+    # 2. Same external conversation on the same (authenticated) source. A
+    #    merged ticket is closed, but its thread still leads to where it went.
     if thread_hash:
-        return await ctx.session.scalar(
+        ticket = await ctx.session.scalar(
             select(Ticket)
             .where(
                 Ticket.source_id == source.id,
                 Ticket.external_thread_id == thread_hash,
-                Ticket.status != TicketStatus.CLOSED,
+                or_(Ticket.status != TicketStatus.CLOSED, Ticket.merged_into_id.is_not(None)),
                 Ticket.scrubbed_at.is_(None),
             )
             .order_by(Ticket.id.desc())
             .limit(1)
         )
+        if ticket is not None:
+            ticket = await follow_merges(ctx, ticket)
+            if _open(ticket):
+                return ticket
     return None
+
+
+def _open(ticket: Ticket) -> bool:
+    return ticket.status != TicketStatus.CLOSED and ticket.scrubbed_at is None

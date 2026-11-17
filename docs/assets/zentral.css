@@ -1,0 +1,72 @@
+/* The documentation wears the same paper-and-ink identity as the application. */
+:root, [data-md-color-scheme="default"] {
+  --md-primary-fg-color: #173a33;
+  --md-primary-fg-color--light: #1f6b5a;
+  --md-primary-fg-color--dark: #10291f;
+  --md-accent-fg-color: #d98f22;
+  --md-default-bg-color: #f6f2ea;
+  --md-default-fg-color: #221e19;
+  --md-typeset-a-color: #1f6b5a;
+  --md-code-bg-color: #efe9de;
+  --md-text-font-family: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --md-code-font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0f1916;
+  --md-primary-fg-color--light: #1d3530;
+  --md-primary-fg-color--dark: #0a120f;
+  --md-accent-fg-color: #f0b655;
+  --md-default-bg-color: #15130f;
+  --md-typeset-a-color: #7cc8ab;
+  --md-code-bg-color: #1e1b16;
+  --md-hue: 35;
+}
+.md-typeset h1, .md-typeset h2, .md-header__topic:first-child {
+  font-family: "Fraunces Variable", "Iowan Old Style", Georgia, serif;
+  letter-spacing: -0.01em;
+}
+.md-typeset h1 { font-weight: 560; color: inherit; }
+.md-typeset h2 { font-weight: 560; }
+.md-typeset img { border-radius: 12px; border: 1px solid rgb(0 0 0 / 8%); }
+
+/* Process maps: a sheet of paper on the desk, in both themes, so one palette
+   (the theme's own Mermaid variables) serves light and dark. */
+:root, [data-md-color-scheme="default"], [data-md-color-scheme="slate"] {
+  --md-mermaid-font-family: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --md-mermaid-edge-color: #8a8174;
+  --md-mermaid-node-bg-color: #e6f0eb;
+  --md-mermaid-node-fg-color: #1d2a25;
+  --md-mermaid-label-bg-color: #fffdf8;
+  --md-mermaid-label-fg-color: #4b453c;
+  --md-mermaid-sequence-actor-bg-color: #e6f0eb;
+  --md-mermaid-sequence-actor-border-color: #1f6b5a;
+  --md-mermaid-sequence-actor-fg-color: #1d2a25;
+  --md-mermaid-sequence-actor-line-color: #c9bfae;
+  --md-mermaid-sequence-actorman-bg-color: #e6f0eb;
+  --md-mermaid-sequence-actorman-line-color: #1f6b5a;
+  --md-mermaid-sequence-box-bg-color: #f2ede3;
+  --md-mermaid-sequence-box-fg-color: #221e19;
+  --md-mermaid-sequence-label-bg-color: #f2ede3;
+  --md-mermaid-sequence-label-fg-color: #221e19;
+  --md-mermaid-sequence-loop-bg-color: #f6f2ea;
+  --md-mermaid-sequence-loop-border-color: #d3c8b4;
+  --md-mermaid-sequence-loop-fg-color: #221e19;
+  --md-mermaid-sequence-message-fg-color: #221e19;
+  --md-mermaid-sequence-message-line-color: #6f675b;
+  --md-mermaid-sequence-note-bg-color: #fdf4d9;
+  --md-mermaid-sequence-note-border-color: #ecd9a0;
+  --md-mermaid-sequence-note-fg-color: #221e19;
+  --md-mermaid-sequence-number-bg-color: #d98f22;
+  --md-mermaid-sequence-number-fg-color: #ffffff;
+}
+.md-typeset .mermaid {
+  background: #fffdf8;
+  border: 1px solid #e5dccc;
+  border-radius: 14px;
+  padding: 18px 12px;
+  margin: 1.2em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+[data-md-color-scheme="slate"] .md-typeset .mermaid { border-color: #36312a; box-shadow: 0 10px 30px rgb(0 0 0 / 35%); }
+.md-typeset .mermaid svg { max-width: 100%; height: auto; }

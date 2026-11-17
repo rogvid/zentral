@@ -46,7 +46,7 @@ class OpenAICompatibleProvider(AIProvider):
             "temperature": 0,
             "max_tokens": 512,
             "messages": [
-                {"role": "system", "content": system_prompt(inp.categories)},
+                {"role": "system", "content": system_prompt(inp.categories, inp.systems)},
                 {"role": "user", "content": user_prompt(inp)},
             ],
             "response_format": {

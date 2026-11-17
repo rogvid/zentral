@@ -7,19 +7,25 @@ from fastapi import APIRouter, status
 
 from zentral.api.deps import CtxDep, RuntimeDep
 from zentral.schemas import (
+    DiagnosticOut,
     RuleIn,
     RuleOut,
     SourceCreated,
     SourceIn,
     SourceOut,
     SourceUpdate,
+    SystemIn,
+    SystemOut,
     TeamIn,
     TeamMemberIn,
     TeamOut,
+    TemplateIn,
+    TemplateOut,
+    TemplateUpdate,
     UserOut,
 )
 from zentral.security.rbac import Permission
-from zentral.services import admin
+from zentral.services import admin, templates
 
 router = APIRouter(tags=["administration"])
 
@@ -55,6 +61,31 @@ async def remove_member(ctx: CtxDep, team_id: uuid.UUID, user_id: str) -> None:
     await ctx.commit()
 
 
+@router.get("/systems")
+async def list_systems(ctx: CtxDep, include_inactive: bool = False) -> list[SystemOut]:
+    return await admin.list_systems(ctx, include_inactive=include_inactive)
+
+
+@router.post("/systems", status_code=status.HTTP_201_CREATED)
+async def create_system(ctx: CtxDep, data: SystemIn) -> SystemOut:
+    system = await admin.create_system(ctx, data)
+    await ctx.commit()
+    return system
+
+
+@router.put("/systems/{system_id}")
+async def update_system(ctx: CtxDep, system_id: uuid.UUID, data: SystemIn) -> SystemOut:
+    system = await admin.update_system(ctx, system_id, data)
+    await ctx.commit()
+    return system
+
+
+@router.delete("/systems/{system_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_system(ctx: CtxDep, system_id: uuid.UUID) -> None:
+    await admin.delete_system(ctx, system_id)
+    await ctx.commit()
+
+
 @router.get("/users")
 async def list_users(ctx: CtxDep) -> list[UserOut]:
     return await admin.list_users(ctx)
@@ -85,6 +116,13 @@ async def update_source(
     source = await admin.update_source(ctx, rt.registry, source_id, data)
     await ctx.commit()
     return source
+
+
+@router.post("/sources/{source_id}/test")
+async def test_source(ctx: CtxDep, rt: RuntimeDep, source_id: uuid.UUID) -> list[DiagnosticOut]:
+    results = await admin.test_source(ctx, rt, source_id)
+    await ctx.commit()
+    return results
 
 
 @router.post("/sources/{source_id}/rotate-token")
@@ -122,4 +160,32 @@ async def update_rule(ctx: CtxDep, rule_id: uuid.UUID, data: RuleIn) -> RuleOut:
 @router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(ctx: CtxDep, rule_id: uuid.UUID) -> None:
     await admin.delete_rule(ctx, rule_id)
+    await ctx.commit()
+
+
+# --- saved replies ------------------------------------------------------------------
+
+
+@router.get("/templates")
+async def list_templates(ctx: CtxDep) -> list[TemplateOut]:
+    return await templates.list_templates(ctx)
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def create_template(ctx: CtxDep, data: TemplateIn) -> TemplateOut:
+    out = await templates.create_template(ctx, data)
+    await ctx.commit()
+    return out
+
+
+@router.patch("/templates/{template_id}")
+async def update_template(ctx: CtxDep, template_id: uuid.UUID, data: TemplateUpdate) -> TemplateOut:
+    out = await templates.update_template(ctx, template_id, data)
+    await ctx.commit()
+    return out
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(ctx: CtxDep, template_id: uuid.UUID) -> None:
+    await templates.delete_template(ctx, template_id)
     await ctx.commit()

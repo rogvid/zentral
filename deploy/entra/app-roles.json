@@ -1,0 +1,74 @@
+[
+  {
+    "id": "f229a17e-3954-5cf6-8d6a-f2a7f90b1111",
+    "value": "Zentral.Admin",
+    "displayName": "Administrator",
+    "description": "Configure teams, systems, channels and automation; read the audit trail.",
+    "allowedMemberTypes": [
+      "User",
+      "Application"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "8da5227f-ad7e-59f0-bda3-14b613401183",
+    "value": "Zentral.Agent",
+    "displayName": "Agent",
+    "description": "Work tickets of their teams, including requester personal data; reply to requesters.",
+    "allowedMemberTypes": [
+      "User"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "b66f62f4-5e3f-517e-a56e-bdd008c487b6",
+    "value": "Zentral.Viewer",
+    "displayName": "Viewer",
+    "description": "Read tickets of their teams with personal data masked.",
+    "allowedMemberTypes": [
+      "User"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "dba14a72-b5d6-51fd-bbf1-71e39f18f576",
+    "value": "Zentral.Auditor",
+    "displayName": "Auditor",
+    "description": "Read and verify the audit trail. No access to ticket content.",
+    "allowedMemberTypes": [
+      "User"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "f4bef3dd-6bc1-5cb3-aa8f-4db176236a3c",
+    "value": "Zentral.PrivacyOfficer",
+    "displayName": "Privacy officer",
+    "description": "Handle data-subject access and erasure requests.",
+    "allowedMemberTypes": [
+      "User"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "748fa234-90ba-5d49-bea2-1f2ceabf2499",
+    "value": "Zentral.Automation",
+    "displayName": "Automation (AI agent)",
+    "description": "Triage and annotate tickets with personal data masked. Cannot message requesters.",
+    "allowedMemberTypes": [
+      "User",
+      "Application"
+    ],
+    "isEnabled": true
+  },
+  {
+    "id": "095f21a1-cfe6-5d00-b70c-02af2fc221f8",
+    "value": "Zentral.Ingest",
+    "displayName": "Ingest service",
+    "description": "Submit new issues only.",
+    "allowedMemberTypes": [
+      "Application"
+    ],
+    "isEnabled": true
+  }
+]

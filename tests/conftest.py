@@ -8,6 +8,7 @@ database. Only the network is replaced.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -15,22 +16,30 @@ from typing import Any
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zentral.api.app import create_app
 from zentral.config import Settings
+from zentral.db import audit_guard
 from zentral.db.models import Base
+from zentral.doctor import expected_revision
 from zentral.runtime import Runtime, build_runtime
 from zentral.security.devauth import LocalIssuer
 from zentral.security.rbac import Role
 from zentral.services.jobs import Worker
+
+# Default: in-memory SQLite. Set ZENTRAL_TEST_DATABASE_URL to run the same suite
+# against PostgreSQL (CI does both).
+DATABASE_URL = os.environ.get("ZENTRAL_TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+IS_POSTGRES = DATABASE_URL.startswith("postgresql")
 
 
 def make_settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
         "env": "test",
         "auth_mode": "dev",
-        "database_url": "sqlite+aiosqlite:///:memory:",
+        "database_url": DATABASE_URL,
         "encryption_keys": [Fernet.generate_key().decode()],
         "blind_index_key": "b" * 40,
         "audit_hmac_key": "a" * 40,
@@ -77,7 +86,20 @@ async def runtime(settings: Settings, outbound: OutboundRecorder) -> AsyncIterat
     http = httpx.AsyncClient(transport=httpx.MockTransport(outbound))
     rt = build_runtime(settings, http=http)
     async with rt.engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        if IS_POSTGRES:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+            for statement in (*audit_guard.INSTALL, *audit_guard.PRUNE_AWARE):
+                await conn.execute(text(statement))
+        else:
+            await conn.run_sync(Base.metadata.create_all)
+    async with rt.engine.begin() as conn:
+        # create_all does not go through Alembic: record the revision by hand.
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        await conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        await conn.execute(
+            text("INSERT INTO alembic_version VALUES (:v)"), {"v": expected_revision()}
+        )
     yield rt
     await rt.aclose()
 
@@ -117,6 +139,18 @@ def worker(runtime: Runtime) -> Worker:
 async def db(runtime: Runtime) -> AsyncIterator[AsyncSession]:
     async with runtime.sessions() as session:
         yield session
+
+
+@pytest.fixture
+async def as_db_superuser(db: AsyncSession) -> AsyncSession:
+    """A session that simulates an attacker with table-owner rights: on
+    PostgreSQL the append-only triggers are switched off so that the *hash
+    chain* (the second line of defence) can be tested on its own."""
+    if IS_POSTGRES:
+        await db.execute(text("ALTER TABLE audit_events DISABLE TRIGGER USER"))
+        await db.execute(text("ALTER TABLE audit_checkpoints DISABLE TRIGGER USER"))
+        await db.commit()
+    return db
 
 
 SUBJECTS = {

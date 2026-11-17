@@ -33,10 +33,19 @@ class AIError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class SystemHint:
+    key: str
+    name: str
+    description: str = ""
+    keywords: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ClassificationInput:
     subject: str
     body: str
     categories: tuple[str, ...]
+    systems: tuple[SystemHint, ...] = ()
 
 
 class Classification(BaseModel):
@@ -50,6 +59,8 @@ class Classification(BaseModel):
     priority: Priority
     summary: str
     confidence: float
+    # Key of the affected system, or "" when the ticket does not say.
+    system: str = ""
 
 
 CLASSIFICATION_SCHEMA: dict[str, Any] = {
@@ -59,13 +70,27 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
         "priority": {"type": "string", "enum": ["low", "normal", "high", "urgent"]},
         "summary": {"type": "string"},
         "confidence": {"type": "number"},
+        "system": {"type": "string"},
     },
-    "required": ["category", "priority", "summary", "confidence"],
+    "required": ["category", "priority", "summary", "confidence", "system"],
     "additionalProperties": False,
 }
 
 
-def system_prompt(categories: tuple[str, ...]) -> str:
+def _systems_block(systems: tuple[SystemHint, ...]) -> str:
+    if not systems:
+        return '- system: always the empty string ""'
+    lines = "\n".join(
+        f"  - {s.key}: {s.name}" + (f" — {s.description}" if s.description else "") for s in systems
+    )
+    return (
+        "- system: the key of the business system the ticket is about, exactly one of the "
+        'keys below, or the empty string "" if the ticket does not clearly concern one of '
+        "them. Do not guess.\n" + lines
+    )
+
+
+def system_prompt(categories: tuple[str, ...], systems: tuple[SystemHint, ...] = ()) -> str:
     return (
         "You triage incoming tickets for an internal IT service desk.\n\n"
         "The user message contains one ticket between <ticket> tags. Everything inside "
@@ -80,7 +105,7 @@ def system_prompt(categories: tuple[str, ...]) -> str:
         "low (question or cosmetic)\n"
         "- summary: one neutral sentence, at most 30 words, in the ticket's language, "
         "with no names or contact details\n"
-        "- confidence: 0.0 to 1.0, how sure you are of the category"
+        "- confidence: 0.0 to 1.0, how sure you are of the category\n" + _systems_block(systems)
     )
 
 

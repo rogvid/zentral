@@ -16,12 +16,21 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
-from zentral.db.models import Contact, Message, Ticket, TicketStatus, utcnow
+from zentral.db.models import (
+    Contact,
+    Message,
+    PortalToken,
+    Rating,
+    Ticket,
+    TicketStatus,
+    utcnow,
+)
 from zentral.schemas import ContactOut, ErasureOut
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
+from zentral.services import attachments
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound
 from zentral.services.tickets import ERASED, ticket_key
@@ -37,6 +46,7 @@ async def _contact_out(ctx: Ctx, contact: Contact) -> ContactOut:
         display_name=contact.display_name,
         created_at=contact.created_at,
         erased_at=contact.erased_at,
+        ai_objected_at=contact.ai_objected_at,
         ticket_count=count or 0,
     )
 
@@ -46,7 +56,9 @@ async def find_contact(ctx: Ctx, email: str) -> ContactOut:
     identity = get_cipher().blind_index("email", email)
     contact = await ctx.session.scalar(select(Contact).where(Contact.identity_hash == identity))
     # The lookup itself is audited (without the address) whether or not it matched.
-    ctx.audit("privacy.contact_lookup", "contact", contact.id if contact else "", found=bool(contact))
+    ctx.audit(
+        "privacy.contact_lookup", "contact", contact.id if contact else "", found=bool(contact)
+    )
     if contact is None:
         raise NotFound("contact")
     return await _contact_out(ctx, contact)
@@ -96,6 +108,10 @@ async def export_contact(ctx: Ctx, contact_id: uuid.UUID) -> dict[str, Any]:
                     # included by default; review them manually if required.
                     if m.kind != "note"
                 ],
+                # Files the person sent; files staff attached are internal, like notes.
+                "attachments": await attachments.export(
+                    ctx, ticket.id, author_contact_id=contact.id
+                ),
             }
         )
     ctx.audit("privacy.exported", "contact", contact.id, tickets=len(exported))
@@ -106,9 +122,31 @@ async def export_contact(ctx: Ctx, contact_id: uuid.UUID) -> dict[str, Any]:
             "email": contact.email,
             "display_name": contact.display_name,
             "first_seen": contact.created_at.isoformat(),
+            "objected_to_ai_processing": contact.ai_objected_at.isoformat()
+            if contact.ai_objected_at
+            else None,
         },
         "tickets": exported,
     }
+
+
+async def set_ai_objection(ctx: Ctx, contact_id: uuid.UUID, *, objected: bool) -> ContactOut:
+    """Record (or withdraw) a person's objection to automated analysis (Art. 21).
+
+    While it stands, none of their tickets is sent to a model — including ones
+    still waiting for triage — and AI agents cannot see them.
+    """
+    ctx.require(P.PRIVACY_RESTRICT, "contact", str(contact_id))
+    contact = await ctx.session.get(Contact, contact_id)
+    if contact is None or contact.erased_at is not None:
+        raise NotFound("contact")
+    if objected and contact.ai_objected_at is None:
+        contact.ai_objected_at = utcnow()
+        ctx.audit("privacy.ai_objection_recorded", "contact", contact.id)
+    elif not objected and contact.ai_objected_at is not None:
+        contact.ai_objected_at = None
+        ctx.audit("privacy.ai_objection_withdrawn", "contact", contact.id)
+    return await _contact_out(ctx, contact)
 
 
 async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:
@@ -118,11 +156,16 @@ async def scrub_ticket(ctx: Ctx, ticket: Ticket) -> int:
         .where(Message.ticket_id == ticket.id)
         .values(body=ERASED, author_contact_id=None, external_id=None)
     )
+    await ctx.session.execute(
+        update(Rating).where(Rating.ticket_id == ticket.id).values(comment=None)
+    )
+    await attachments.remove_for_ticket(ctx, ticket.id)
     ticket.subject = ERASED
     ticket.ai_summary = None
     ticket.requester_id = None
     ticket.requester = None
     ticket.external_thread_id = None
+    ticket.thread_ref = None
     ticket.tags = []
     ticket.scrubbed_at = utcnow()
     if ticket.status != TicketStatus.CLOSED:
@@ -155,8 +198,12 @@ async def erase_contact(ctx: Ctx, contact_id: uuid.UUID) -> ErasureOut:
     contact.display_name = None
     contact.identity_hash = None
     contact.erased_at = utcnow()
+    # Signed-in portal sessions and unused links end with the identity.
+    await ctx.session.execute(delete(PortalToken).where(PortalToken.contact_id == contact.id))
     ctx.audit("privacy.erased", "contact", contact.id, tickets=len(tickets), messages=messages)
-    return ErasureOut(contact_id=contact.id, tickets_scrubbed=len(tickets), messages_scrubbed=messages)
+    return ErasureOut(
+        contact_id=contact.id, tickets_scrubbed=len(tickets), messages_scrubbed=messages
+    )
 
 
 async def retention_sweep(ctx: Ctx, *, batch: int = 200) -> int:
@@ -194,5 +241,8 @@ async def retention_sweep(ctx: Ctx, *, batch: int = 200) -> int:
                 contact.display_name = None
                 contact.identity_hash = None
                 contact.erased_at = utcnow()
+                await ctx.session.execute(
+                    delete(PortalToken).where(PortalToken.contact_id == contact.id)
+                )
                 ctx.audit("retention.contact_erased", "contact", contact.id)
     return len(tickets)

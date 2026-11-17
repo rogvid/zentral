@@ -1,0 +1,252 @@
+export type Status = "new" | "open" | "pending" | "resolved" | "closed";
+export type Priority = "low" | "normal" | "high" | "urgent";
+
+export interface AuthConfig {
+  mode: "entra" | "oidc" | "dev";
+  authority: string;
+  client_id: string;
+  scopes: string[];
+}
+
+export interface AppConfig {
+  auth: AuthConfig;
+  ticket_prefix: string;
+  categories: string[];
+  business_hours: string;
+  attachments_enabled: boolean;
+  attachment_max_bytes: number;
+  timezone: string;
+  require_system_to_resolve: boolean;
+}
+
+export interface Me {
+  subject: string;
+  kind: string;
+  display_name: string;
+  email: string;
+  roles: string[];
+  permissions: string[];
+  team_ids: string[];
+}
+
+export interface Requester {
+  id: string;
+  display_name: string;
+  email: string | null;
+}
+
+export interface Ticket {
+  id: number;
+  key: string;
+  subject: string;
+  status: Status;
+  priority: Priority;
+  category: string | null;
+  tags: string[];
+  channel: string;
+  team_id: string | null;
+  team_name: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  system_id: string | null;
+  system_key: string | null;
+  system_name: string | null;
+  requester: Requester | null;
+  ai_category: string | null;
+  ai_priority: Priority | null;
+  ai_system_key: string | null;
+  ai_confidence: number | null;
+  ai_summary: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  response_due_at: string | null;
+  response_state: TargetState;
+  first_response_at: string | null;
+  resolve_due_at: string | null;
+  resolve_state: TargetState;
+  target_clock: "business" | "24x7";
+  merged_into_id: number | null;
+  merged_into_key: string | null;
+  ai_excluded: boolean;
+  rating_score: number | null;
+  rating_comment: string | null;
+  pii_redacted: boolean;
+}
+
+export type TargetState = "met" | "late" | "due" | "breached" | "paused" | "none";
+
+export interface Insights {
+  days: number;
+  created: number;
+  resolved: number;
+  open_now: number;
+  overdue_now: number;
+  waiting_on_requester: number;
+  oldest_open_days: number | null;
+  median_first_response_minutes: number | null;
+  median_resolution_hours: number | null;
+  first_response: { met: number; missed: number; rate: number | null };
+  resolution: { met: number; missed: number; rate: number | null };
+  timeline: { day: string; created: number; resolved: number }[];
+  by_system: { label: string; count: number }[];
+  by_category: { label: string; count: number }[];
+  by_channel: { label: string; count: number }[];
+  by_priority: { label: string; count: number }[];
+  ratings: number;
+  rating_average: number | null;
+  ratings_by_score: { label: string; count: number }[];
+}
+
+export interface TicketPage {
+  items: Ticket[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface Message {
+  id: string;
+  kind: "inbound" | "outbound" | "note";
+  body: string;
+  author_name: string;
+  author_type: "requester" | "staff" | "system";
+  delivery_status: string;
+  created_at: string;
+  attachments: AttachmentInfo[];
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  entra_group_id: string | null;
+  member_ids: string[];
+}
+
+export interface SystemInfo {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  default_team_id: string | null;
+  active: boolean;
+  sla_response_hours: Partial<Record<Priority, number>>;
+  sla_resolve_hours: Partial<Record<Priority, number>>;
+}
+
+export interface User {
+  id: string;
+  kind: string;
+  display_name: string;
+  email: string;
+}
+
+export interface Diagnostic {
+  name: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+}
+
+export interface Activity {
+  occurred_at: string;
+  action: string;
+  actor_name: string;
+  actor_kind: string;
+  channel: string;
+  details: Record<string, unknown>;
+}
+
+export interface ConnectorInfo {
+  name: string;
+  config_schema: import("./components/SchemaForm").JsonSchema;
+  capabilities: string[];
+  secret_fields: string[];
+  required_secrets: string[];
+  uses_ingest_token: boolean;
+}
+
+export interface Source {
+  id: string;
+  name: string;
+  connector: string;
+  config: Record<string, unknown>;
+  default_team_id: string | null;
+  default_system_id: string | null;
+  enabled: boolean;
+  has_secrets: boolean;
+  has_token: boolean;
+  hook_url: string | null;
+  capabilities: string[];
+  last_ok_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  ingest_token?: string | null;
+}
+
+export interface Rule {
+  id: string;
+  name: string;
+  position: number;
+  enabled: boolean;
+  conditions: Record<string, unknown>;
+  actions: Record<string, unknown>;
+}
+
+export interface AuditEvent {
+  seq: number;
+  occurred_at: string;
+  actor_id: string;
+  actor_kind: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  outcome: "success" | "denied" | "failure";
+  channel: string;
+  ip: string;
+  details: Record<string, unknown>;
+}
+
+export interface Contact {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  created_at: string;
+  erased_at: string | null;
+  ai_objected_at: string | null;
+  ticket_count: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  body: string;
+  team_id: string | null;
+  team_name: string | null;
+  updated_at: string;
+}
+
+export interface AppNotification {
+  id: string;
+  kind: string;
+  ticket_id: number;
+  ticket_key: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationPage {
+  items: AppNotification[];
+  unread: number;
+}
+
+export interface AttachmentInfo {
+  id: string;
+  message_id: string | null;
+  filename: string;
+  content_type: string;
+  size: number;
+  status: "scanning" | "clean" | "blocked";
+  from_requester: boolean;
+  created_at: string;
+}

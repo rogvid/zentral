@@ -1,0 +1,25 @@
+# Zentral on Kubernetes.
+#
+#   kubectl create namespace zentral
+#   kubectl -n zentral create secret generic zentral-secrets --from-env-file=secrets.env
+#   kubectl apply -k deploy/kubernetes/base      # or your own overlay
+#
+# See docs/operations/deploy-kubernetes.md. Create an overlay to set your image,
+# hostname and identity settings instead of editing these files.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: zentral
+resources:
+  - configmap.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - worker.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+images:
+  - name: zentral
+    newName: ghcr.io/your-org/zentral
+    newTag: "0.1.0"
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: zentral

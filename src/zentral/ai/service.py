@@ -9,13 +9,21 @@ import httpx
 import structlog
 from sqlalchemy import select
 
-from zentral.ai.base import AIError, AIProvider, Classification, ClassificationInput
+from zentral.ai.base import (
+    AIError,
+    AIProvider,
+    Classification,
+    ClassificationInput,
+    SystemHint,
+)
 from zentral.ai.providers.rules import RulesProvider
 from zentral.config import Settings
-from zentral.db.models import Message, Ticket, TicketPriority
+from zentral.db.models import Message, System, Ticket, TicketPriority
 from zentral.security.redaction import redact
 from zentral.services.automation import apply_rules
 from zentral.services.context import Ctx
+from zentral.services.sla import refresh_targets
+from zentral.services.tickets import apply_system
 from zentral.text import single_line
 
 log = structlog.get_logger(__name__)
@@ -35,7 +43,9 @@ def load_provider(settings: Settings, http: httpx.AsyncClient) -> AIProvider:
     raise ValueError(f"unknown AI provider {settings.ai_provider!r}")
 
 
-def _normalise(result: Classification, categories: tuple[str, ...]) -> Classification:
+def _normalise(
+    result: Classification, categories: tuple[str, ...], system_keys: frozenset[str] = frozenset()
+) -> Classification:
     """Never trust model output: force it back into the allowed value space."""
     category = result.category.strip().lower()
     if category not in categories:
@@ -48,12 +58,20 @@ def _normalise(result: Classification, categories: tuple[str, ...]) -> Classific
         priority=result.priority,
         summary=single_line(result.summary, 300),
         confidence=round(confidence, 3),
+        system=system if (system := result.system.strip().lower()) in system_keys else "",
     )
 
 
 async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> None:
     ticket = await ctx.session.get(Ticket, ticket_id)
-    if ticket is None or ticket.scrubbed_at is not None:
+    if ticket is None or ticket.scrubbed_at is not None or ticket.merged_into_id is not None:
+        return
+    if ticket.requester is not None and ticket.requester.ai_objected_at is not None:
+        # The requester objected to automated analysis: no model sees this
+        # ticket. Deterministic routing rules configured by people still apply.
+        ctx.audit("ticket.classification_skipped", "ticket", ticket.id, reason="objection")
+        await apply_rules(ctx, ticket)
+        refresh_targets(ticket, ctx.settings)
         return
     first = await ctx.session.scalar(
         select(Message).where(Message.ticket_id == ticket_id).order_by(Message.created_at).limit(1)
@@ -63,7 +81,20 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
     if redacted:
         subject, body = redact(subject), redact(body)
     categories = tuple(ctx.settings.categories)
-    inp = ClassificationInput(subject=subject, body=body, categories=categories)
+    systems = (
+        await ctx.session.scalars(
+            select(System).where(System.active.is_(True)).order_by(System.key)
+        )
+    ).all()
+    by_key = {s.key: s for s in systems}
+    inp = ClassificationInput(
+        subject=subject,
+        body=body,
+        categories=categories,
+        systems=tuple(
+            SystemHint(s.key, s.name, s.description, tuple(s.keywords or ())) for s in systems
+        ),
+    )
 
     used = provider
     try:
@@ -74,10 +105,11 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
         log.warning("ai_provider_failed", provider=provider.name, reason=str(exc))
         used = RulesProvider(ctx.settings, provider.http)
         raw = await used.classify(inp)
-    result = _normalise(raw, categories)
+    result = _normalise(raw, categories, frozenset(by_key))
 
     ticket.ai_category = result.category
     ticket.ai_priority = result.priority
+    ticket.ai_system_key = result.system or None
     ticket.ai_confidence = result.confidence
     ticket.ai_summary = result.summary or None
     ticket.ai_model = used.model_label[:128]
@@ -89,6 +121,8 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
             ticket.category = result.category
         if ticket.priority == TicketPriority.NORMAL:
             ticket.priority = result.priority
+        if ticket.system_id is None and result.system:
+            apply_system(ticket, by_key[result.system])
     ctx.audit(
         "ticket.classified",
         "ticket",
@@ -99,8 +133,11 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
         input_redacted=redacted,
         category=result.category,
         priority=result.priority,
+        system=result.system,
         confidence=result.confidence,
         applied=applied,
         fallback=used is not provider,
     )
     await apply_rules(ctx, ticket)
+    # Classification or a rule may have changed the priority: re-plan the targets.
+    refresh_targets(ticket, ctx.settings)

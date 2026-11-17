@@ -7,6 +7,11 @@ is created; that secret is stored (encrypted) as the source's ``hmac_secret``.
 
 Replies from agents are posted through an optional Teams *Workflows* webhook
 URL (``reply_webhook_url``), restricted to allow-listed Microsoft hosts.
+
+Files: an Outgoing Webhook receives no credential with which files posted in
+Teams could be downloaded (that needs a full bot registration). Rather than
+lose them silently, the ticket records that files were left behind and the
+person is told how to send them.
 """
 
 from __future__ import annotations
@@ -34,9 +39,7 @@ from zentral.text import html_to_text, single_line
 
 class TeamsConnector(Connector):
     name: ClassVar[str] = "teams"
-    capabilities: ClassVar[frozenset[Capability]] = frozenset(
-        {Capability.WEBHOOK, Capability.SEND}
-    )
+    capabilities: ClassVar[frozenset[Capability]] = frozenset({Capability.WEBHOOK, Capability.SEND})
     secret_fields: ClassVar[frozenset[str]] = frozenset({"hmac_secret", "reply_webhook_url"})
     required_secrets: ClassVar[frozenset[str]] = frozenset({"hmac_secret"})
 
@@ -69,6 +72,17 @@ class TeamsConnector(Connector):
                 status_code=200,
             )
         sender_id = str(sender.get("aadObjectId") or sender.get("id") or "") or None
+        # Every message carries its own text as a text/html attachment; anything else is a file.
+        files = [
+            a
+            for a in activity.get("attachments") or []
+            if isinstance(a, dict) and a.get("contentType") != "text/html"
+        ]
+        if files:
+            text += (
+                f"\n\n[{len(files)} file(s) were posted in Teams but cannot be received "
+                "through Teams. Ask the requester to send them by e-mail, quoting the ticket key.]"
+            )
         conversation = activity.get("conversation") or {}
         message = InboundMessage(
             external_id=activity_id,
@@ -81,7 +95,16 @@ class TeamsConnector(Connector):
         )
         return WebhookResult(
             messages=[message],
-            response={"type": "message", "text": "Thanks — this is logged as {ticket_keys}."},
+            response={
+                "type": "message",
+                "text": "Thanks — this is logged as {ticket_keys}."
+                + (
+                    " Files can't be received through Teams: please e-mail them to the "
+                    "service desk and mention {ticket_keys}."
+                    if files
+                    else ""
+                ),
+            },
             status_code=200,
         )
 

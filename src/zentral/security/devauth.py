@@ -17,8 +17,8 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from zentral.security.entra import StaticKeySource, TokenValidator
 from zentral.security.rbac import Role
+from zentral.security.tokens import IdentityProfile, StaticKeySource, TokenValidator
 
 DEV_TENANT = "00000000-0000-4000-8000-00000000d3e0"
 DEV_AUDIENCE = "api://zentral-dev"
@@ -35,10 +35,12 @@ PERSONAS: dict[str, dict[str, Any]] = {
 
 
 class LocalIssuer:
-    def __init__(self, tenant_id: str = DEV_TENANT, audience: str = DEV_AUDIENCE) -> None:
+    def __init__(
+        self, tenant_id: str = DEV_TENANT, audience: str = DEV_AUDIENCE, issuer: str = ""
+    ) -> None:
         self.tenant_id = tenant_id
         self.audience = audience
-        self.issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+        self.issuer = issuer or f"https://login.microsoftonline.com/{tenant_id}/v2.0"
         self.kid = uuid.uuid4().hex
         self._key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
@@ -48,13 +50,23 @@ class LocalIssuer:
         return {"keys": [jwk]}
 
     def validator(self) -> TokenValidator:
-        return TokenValidator(
-            issuer=self.issuer,
-            audiences=[self.audience],
-            tenant_id=self.tenant_id,
-            required_scope=DEV_SCOPE,
-            keys=StaticKeySource(self.jwks()),
-        )
+        """Validates this issuer's tokens with Entra ID semantics."""
+        return TokenValidator(self.profile(), StaticKeySource(self.jwks()))
+
+    def profile(self, **overrides: Any) -> IdentityProfile:
+        base: dict[str, Any] = {
+            "name": "dev",
+            "issuer": self.issuer,
+            "audiences": (self.audience,),
+            "subject_claim": "oid",
+            "scope_claim": "scp",
+            "required_scope": DEV_SCOPE,
+            "email_claim": "preferred_username",
+            "tenant_claim": "tid",
+            "tenant_id": self.tenant_id,
+            "entra_app_tokens": True,
+        }
+        return IdentityProfile(**{**base, **overrides})
 
     def issue(
         self,
@@ -66,10 +78,11 @@ class LocalIssuer:
         app: bool = False,
         groups: list[str] | None = None,
         lifetime: int = 3600,
+        claims: dict[str, Any] | None = None,
         **overrides: Any,
     ) -> str:
         now = int(time.time())
-        claims: dict[str, Any] = {
+        payload: dict[str, Any] = {
             "iss": self.issuer,
             "aud": self.audience,
             "tid": self.tenant_id,
@@ -83,15 +96,16 @@ class LocalIssuer:
             "ver": "2.0",
         }
         if app:
-            claims["idtyp"] = "app"
-            claims["app_displayname"] = name
+            payload["idtyp"] = "app"
+            payload["app_displayname"] = name
         else:
-            claims.update({"scp": DEV_SCOPE, "name": name, "preferred_username": email})
+            payload.update({"scp": DEV_SCOPE, "name": name, "preferred_username": email})
         if groups:
-            claims["groups"] = groups
-        claims.update(overrides)
-        claims = {k: v for k, v in claims.items() if v is not None}
-        return jwt.encode(claims, self._key, algorithm="RS256", headers={"kid": self.kid})
+            payload["groups"] = groups
+        payload.update(overrides)
+        payload.update(claims or {})
+        payload = {k: v for k, v in payload.items() if v is not None}
+        return jwt.encode(payload, self._key, algorithm="RS256", headers={"kid": self.kid})
 
     def issue_persona(self, persona: str) -> str:
         spec = PERSONAS[persona]
@@ -102,4 +116,5 @@ class LocalIssuer:
             name=spec["name"],
             email=f"{persona}@zentral.dev",
             app=bool(spec.get("app")),
+            lifetime=8 * 3600,
         )

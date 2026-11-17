@@ -11,8 +11,8 @@ from fastapi import Depends, HTTPException, Request, status
 from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
 from zentral.runtime import Runtime
-from zentral.security.entra import AuthenticationError, TokenValidator
 from zentral.security.principal import Principal
+from zentral.security.tokens import AuthenticationError, Authenticator
 from zentral.services.context import Ctx, resolve_team_ids, touch_user
 
 log = structlog.get_logger(__name__)
@@ -45,16 +45,22 @@ def _unauthenticated() -> HTTPException:
 
 
 async def get_principal(request: Request) -> Principal:
-    validator: TokenValidator = request.app.state.validator
+    validator: Authenticator = request.app.state.validator
     limiter: RateLimiter = request.app.state.limiter
     runtime = get_runtime(request)
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthenticated()
+    ip = client_ip(request)
+    # An address that keeps presenting bad tokens is slowed down before any
+    # cryptography is done for it (token guessing, stolen-token replay, scanners).
+    if limiter.blocked(f"authfail:{ip}", runtime.settings.auth_failure_limit_per_minute):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many failed attempts")
     try:
         principal = await validator.validate(token.strip())
     except AuthenticationError as exc:
-        log.warning("authentication_failed", reason=str(exc), ip=client_ip(request))
+        limiter.allow(f"authfail:{ip}", runtime.settings.auth_failure_limit_per_minute)
+        log.warning("authentication_failed", reason=str(exc), ip=ip)
         raise _unauthenticated() from exc
     if not limiter.allow(f"p:{principal.subject}", runtime.settings.rate_limit_per_minute):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limit exceeded")

@@ -45,7 +45,9 @@ def clean_text(text: str, max_chars: int | None = None) -> str:
     """Normalise untrusted text: strip control characters and collapse blank runs."""
     text = unicodedata.normalize("NFC", text).replace("\r\n", "\n").replace("\r", "\n")
     text = "".join(
-        ch for ch in text if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf", "Cs", "Co")
+        ch
+        for ch in text
+        if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf", "Cs", "Co")
     )
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()

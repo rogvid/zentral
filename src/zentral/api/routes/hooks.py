@@ -16,10 +16,14 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from zentral.api.deps import RuntimeDep, client_ip, request_meta
-from zentral.connectors.base import Capability, WebhookAuthError, WebhookPayloadError, WebhookRequest
+from zentral.connectors.base import (
+    Capability,
+    WebhookAuthError,
+    WebhookPayloadError,
+    WebhookRequest,
+)
 from zentral.db.models import IngestSource
 from zentral.services.ingest import ingest
-from zentral.services.jobs import instantiate
 
 router = APIRouter(tags=["ingest"])
 log = structlog.get_logger(__name__)
@@ -50,7 +54,7 @@ async def receive_hook(source_id: str, request: Request, rt: RuntimeDep) -> JSON
 
     async with rt.sessions() as session:
         source = await session.get(IngestSource, parsed_id)
-        connector = instantiate(rt, source) if source is not None and source.enabled else None
+        connector = rt.connector_for(source) if source is not None and source.enabled else None
         if source is None or connector is None or Capability.WEBHOOK not in connector.capabilities:
             raise _UNAUTHORIZED
         try:

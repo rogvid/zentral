@@ -39,10 +39,16 @@ class Capability(StrEnum):
     WEBHOOK = "webhook"
     POLL = "poll"
     SEND = "send"
+    # Can deliver files with a reply (e-mail can; a Teams workflow webhook cannot).
+    SEND_FILES = "send_files"
 
 
 class ConnectorError(Exception):
     """Operational failure talking to the external system (retried by the worker)."""
+
+
+class ConnectorRejected(ConnectorError):
+    """The channel will never accept this (e.g. recipient not allowed). Not retried."""
 
 
 class WebhookAuthError(Exception):
@@ -58,6 +64,15 @@ class NoConfig(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InboundAttachment:
+    """A file that came with an inbound message. Checked and scanned by Zentral,
+    never trusted for its name or declared type."""
+
+    filename: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """A message from the outside world, normalised."""
 
@@ -70,7 +85,16 @@ class InboundMessage:
     sender_name: str | None = None
     thread_id: str | None = None  # external conversation id, for threading
     priority: str | None = None
+    system: str | None = None  # key of the system the message concerns, if the sender knows
     received_at: datetime | None = None
+    attachments: tuple[InboundAttachment, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OutboundAttachment:
+    filename: str
+    content_type: str
+    data: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +105,7 @@ class OutboundMessage:
     recipient_email: str | None
     recipient_name: str | None
     thread_id: str | None = None
+    attachments: tuple[OutboundAttachment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +127,19 @@ class WebhookResult:
 class PollResult:
     messages: list[InboundMessage]
     cursor: dict[str, Any]
+    # Opaque references handed back to ``Connector.acknowledge`` once the
+    # messages are safely stored (e.g. to mark mail as read).
+    ack: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """One line of a channel self-test, shown to administrators. Never put
+    secrets or message content in ``detail``."""
+
+    name: str
+    status: str  # ok | warn | fail
+    detail: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +178,14 @@ class Connector(ABC):
 
     async def send(self, message: OutboundMessage) -> None:
         raise NotImplementedError
+
+    async def acknowledge(self, refs: list[str]) -> None:  # noqa: B027 - optional hook
+        """Called after polled messages were committed. Optional; failures are
+        logged and never undo the ingestion."""
+
+    async def diagnose(self) -> list[Diagnostic]:
+        """Self-test run when an administrator presses *Test*. Optional."""
+        return []
 
     # -- helpers for implementers -------------------------------------------------
 

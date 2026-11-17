@@ -8,10 +8,11 @@ loading an entry point executes its code, only names listed in
 
 from __future__ import annotations
 
+from functools import lru_cache
 from importlib.metadata import entry_points
 
 from zentral.config import Settings
-from zentral.connectors.base import Connector
+from zentral.connectors.base import Capability, Connector
 
 GROUP = "zentral.connectors"
 
@@ -52,3 +53,19 @@ class ConnectorRegistry:
             }
             for name, klass in sorted(self._connectors.items())
         ]
+
+
+@lru_cache(maxsize=8)
+def _registry(enabled: tuple[str, ...]) -> dict[str, frozenset[Capability]]:
+    found: dict[str, frozenset[Capability]] = {}
+    for ep in entry_points(group=GROUP):
+        if ep.name in enabled:
+            klass = ep.load()
+            if isinstance(klass, type) and issubclass(klass, Connector):
+                found[ep.name] = klass.capabilities
+    return found
+
+
+def capabilities_of(settings: Settings, connector: str) -> frozenset[Capability]:
+    """What a channel type can do, without instantiating it."""
+    return _registry(tuple(settings.enabled_connectors)).get(connector, frozenset())

@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 import httpx
+from pydantic import ValidationError
 
 from zentral.ai.base import (
     AIError,
@@ -35,14 +36,19 @@ class AnthropicProvider(AIProvider):
     name: ClassVar[str] = "anthropic"
     on_prem: ClassVar[bool] = False
 
-    def __init__(self, settings: Settings, http: httpx.AsyncClient) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        http: httpx.AsyncClient,
+        client: AsyncAnthropic | None = None,
+    ) -> None:
         super().__init__(settings, http)
         try:
             from anthropic import AsyncAnthropic
         except ImportError as exc:  # pragma: no cover - depends on installation
             raise AIError("install 'zentral[anthropic]' to use the anthropic provider") from exc
         self._model = settings.ai_model or DEFAULT_MODEL
-        self._client: AsyncAnthropic = AsyncAnthropic(
+        self._client: AsyncAnthropic = client or AsyncAnthropic(
             api_key=settings.ai_api_key.get_secret_value() or None,
             timeout=settings.ai_timeout_seconds,
             max_retries=1,
@@ -59,7 +65,7 @@ class AnthropicProvider(AIProvider):
             response = await self._client.messages.parse(
                 model=self._model,
                 max_tokens=1024,
-                system=system_prompt(inp.categories),
+                system=system_prompt(inp.categories, inp.systems),
                 messages=[{"role": "user", "content": user_prompt(inp)}],
                 output_format=Classification,
                 output_config={"effort": "low"},
@@ -70,6 +76,10 @@ class AnthropicProvider(AIProvider):
             raise AIError(f"Anthropic API returned {exc.status_code}") from exc
         except anthropic.APIConnectionError as exc:
             raise AIError("Anthropic API unreachable") from exc
+        except (ValidationError, ValueError) as exc:
+            # The SDK parses the answer eagerly; a refusal or truncated output
+            # (empty or partial JSON) surfaces here.
+            raise AIError("Anthropic API returned an unusable classification") from exc
         if response.stop_reason != "end_turn" or response.parsed_output is None:
             # Covers refusals and truncated output.
             raise AIError(f"no classification produced (stop_reason={response.stop_reason})")

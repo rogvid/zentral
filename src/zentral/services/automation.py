@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from zentral.db.models import AutomationRule, Team, Ticket, User
+from zentral.db.models import AutomationRule, System, Team, Ticket, User
 from zentral.schemas import RuleActions, RuleConditions
 from zentral.services.context import Ctx
 
@@ -25,6 +25,8 @@ def matches(conditions: RuleConditions, ticket: Ticket) -> bool:
     if conditions.priority and conditions.priority != ticket.priority:
         return False
     if conditions.source_id and conditions.source_id != ticket.source_id:
+        return False
+    if conditions.system_id and conditions.system_id != ticket.system_id:
         return False
     if conditions.subject_contains:
         subject = ticket.subject.casefold()
@@ -48,13 +50,24 @@ async def apply_rules(ctx: Ctx, ticket: Ticket) -> list[str]:
             continue
         actions = RuleActions.model_validate(rule.actions)
         changes: dict[str, Any] = {}
-        if actions.set_team_id and await ctx.session.get(Team, actions.set_team_id):
+        if (
+            actions.set_team_id is not None
+            and await ctx.session.get(Team, actions.set_team_id) is not None
+        ):
             ticket.team_id = actions.set_team_id
             changes["team_id"] = str(actions.set_team_id)
+        if actions.set_system_id is not None:
+            system = await ctx.session.get(System, actions.set_system_id)
+            if system is not None and system.active:
+                ticket.system_id, ticket.system = system.id, system
+                changes["system_id"] = str(system.id)
         if actions.set_priority:
             ticket.priority = actions.set_priority
             changes["priority"] = actions.set_priority.value
-        if actions.set_assignee_id and await ctx.session.get(User, actions.set_assignee_id):
+        if (
+            actions.set_assignee_id is not None
+            and await ctx.session.get(User, actions.set_assignee_id) is not None
+        ):
             ticket.assignee_id = actions.set_assignee_id
             changes["assignee_id"] = actions.set_assignee_id
         if actions.add_tags:

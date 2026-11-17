@@ -1,0 +1,14 @@
+# TLS termination with automatic certificates (Let's Encrypt / ZeroSSL).
+# For an internal CA, add:  tls /path/cert.pem /path/key.pem
+{$ZENTRAL_HOSTNAME} {
+	encode zstd gzip
+	reverse_proxy api:8000 {
+		# Never let a client spoof its address.
+		header_up X-Forwarded-For {remote_host}
+	}
+	header -Server
+	log {
+		output stdout
+		format json
+	}
+}

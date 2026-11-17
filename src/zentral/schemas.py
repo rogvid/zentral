@@ -401,6 +401,7 @@ class AuditVerifyOut(Out):
     ok: bool
     checked: int
     first_bad_seq: int | None
+    archived_through: int = 0
 
 
 class ContactLookup(In):

@@ -80,10 +80,56 @@ Events are also mirrored to the application log in real time
 (`logger: zentral.audit`); shipping those to a SIEM gives you a second,
 continuously updated copy.
 
-!!! note "Pruning old events"
-    Removing old events from the database is not supported yet: the chain
-    starts at event 1, and the database refuses deletions. Plan capacity for
-    roughly 0.5 kB per event.
+## Archive and prune (keep the database lean)
+
+The trail only grows (roughly 0.5 kB per event). To move old events out of the
+database **without losing the proof**, archive them to signed files and then
+prune — two separate, deliberate steps:
+
+```mermaid
+flowchart LR
+    A["zentral audit archive<br/>--before 2026-01-01<br/>--output /archive"] --> F["audit-…jsonl<br/>+ signed manifest<br/>(verified on write)"]
+    F --> W["Copy both files to<br/>write-once storage"]
+    W --> P["zentral audit prune<br/>manifest --yes"]
+    P --> C["Signed checkpoint +<br/>archived events removed<br/>+ audit.pruned recorded"]
+    C --> V["zentral audit verify:<br/>checkpoints, then the chain<br/>after the newest one"]
+```
+
+```bash
+zentral audit archive --before 2026-01-01 --output /mnt/audit-archive
+# archived events 1-48211 (48211) to /mnt/audit-archive/audit-0000000001-0000048211.jsonl
+zentral audit verify-archive /mnt/audit-archive/audit-0000000001-0000048211.manifest.json
+# … copy both files to WORM storage …
+zentral audit prune /mnt/audit-archive/audit-0000000001-0000048211.manifest.json --yes
+```
+
+What protects this:
+
+- `archive` refuses to run if the chain does not verify, never overwrites an
+  archive, and re-reads what it wrote before reporting success. The manifest
+  records the range, the hashes at both ends and the file's SHA-256, and is
+  signed with the audit key.
+- `prune` verifies the archive again, checks that its last event is
+  byte-for-byte the event in the database, and only then — in one transaction —
+  writes a **signed checkpoint**, removes exactly that range, and records
+  `audit.pruned` in the live chain. Archives must be pruned in order.
+- The database guard permits that delete and nothing else: only inside a
+  transaction that declared it, only up to an existing checkpoint. Checkpoints
+  can never be changed or removed.
+- `verify` checks that the checkpoints form their own signed chain and resumes
+  the event chain after the newest one. Removing events without a valid
+  checkpoint — or forging one without the audit key — is reported as tampering.
+
+Keep the audit key (and retired keys in `ZENTRAL_AUDIT_HMAC_PREVIOUS_KEYS`) for
+as long as you keep archives: it is what makes them verifiable.
+
+### Automatically
+
+Set `ZENTRAL_AUDIT_ARCHIVE_DIR` to a directory on write-once storage and the
+worker writes a signed archive of everything before today, once a day. Add
+`ZENTRAL_AUDIT_KEEP_DAYS` (e.g. `400`) and it also prunes archives whose newest
+event is older than that. Without `KEEP_DAYS`, nothing is ever removed from the
+database.
 
 ## "Tampering detected at event #N"
 

@@ -350,3 +350,24 @@ class AuditEvent(Base):
     hash: Mapped[str] = mapped_column(String(64))
 
     __table_args__ = (Index("ix_audit_resource", "resource_type", "resource_id"),)
+
+
+class AuditCheckpoint(Base):
+    """Where the in-database audit chain resumes after older events were archived.
+
+    Written in the same transaction that removes the archived events. Each
+    checkpoint is signed with the audit key and chained to the previous one,
+    so a forged checkpoint (to hide a deletion) fails verification.
+    """
+
+    __tablename__ = "audit_checkpoints"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    hash: Mapped[str] = mapped_column(String(64))  # hash of event ``seq``
+    first_seq: Mapped[int] = mapped_column(Integer)
+    events: Mapped[int] = mapped_column(Integer)
+    archive_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(64))
+    prev_signature: Mapped[str] = mapped_column(String(64))
+    signature: Mapped[str] = mapped_column(String(64))

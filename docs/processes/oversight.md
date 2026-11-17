@@ -9,6 +9,7 @@ flowchart LR
     EV --> CH["Linked to the previous event<br/>by a keyed hash"]
     CH --> AU["Auditor: filter, verify integrity,<br/>export to immutable storage"]
     EV --> SIEM["Copy to the log stream<br/>for your SIEM"]
+    CH --> AR["Daily signed archive;<br/>old events pruned behind<br/>a signed checkpoint"]
 ```
 
 | Question an auditor asks | Where the answer is |
@@ -17,6 +18,7 @@ flowchart LR
 | Did anyone try something they may not do? | Audit trail, outcome *denied* |
 | What did the AI agent do? | Audit trail, *via* `mcp` |
 | Was anything changed after the fact? | *Verify integrity* — any edit breaks the chain |
+| Where are last year's events? | Signed archives; `audit.pruned` and the checkpoints say which range went where ([runbook](../runbooks/audit-verification.md#archive-and-prune-keep-the-database-lean)) |
 | Who changed the configuration? | `source.*`, `rule.*`, `team.*`, `system.*` events |
 
 Owner: the **auditor** (`audit:read`), who sees no ticket content. Details in

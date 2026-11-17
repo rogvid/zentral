@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import secrets
 import signal
+from datetime import UTC, date, datetime, time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from sqlalchemy import text
@@ -246,7 +247,12 @@ def audit_verify() -> None:
         finally:
             await runtime.aclose()
         if result.ok:
-            typer.echo(f"OK: {result.checked} events verified")
+            archived = (
+                f" (events 1-{result.archived_through} archived, vouched for by signed checkpoints)"
+                if result.archived_through
+                else ""
+            )
+            typer.echo(f"OK: {result.checked} events verified{archived}")
         else:
             typer.echo(f"TAMPERING DETECTED at seq {result.first_bad_seq}", err=True)
         return result.ok
@@ -287,6 +293,95 @@ def audit_export(output: Path, after_seq: int = 0) -> None:
         return count
 
     typer.echo(f"exported {asyncio.run(main())} events to {output}")
+
+
+def _parse_day(value: str) -> datetime:
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        raise typer.BadParameter("use a date like 2026-01-01") from None
+    return datetime.combine(day, time(0), UTC)
+
+
+@audit_app.command("archive")
+def audit_archive(
+    before: Annotated[str, typer.Option(help="Archive events before this date (UTC), YYYY-MM-DD.")],
+    output: Annotated[Path, typer.Option(help="Directory for the archive and its manifest.")],
+) -> None:
+    """Write a signed archive of old audit events. Removes nothing."""
+    from zentral.audit.archive import ArchiveError, write_archive
+    from zentral.runtime import build_runtime
+
+    cutoff = _parse_day(before)
+
+    async def main() -> str:
+        runtime = build_runtime(get_settings())
+        try:
+            async with runtime.sessions() as session:
+                manifest = await write_archive(session, runtime.trail, cutoff, output)
+        finally:
+            await runtime.aclose()
+        if manifest is None:
+            return "nothing to archive"
+        return (
+            f"archived events {manifest.first_seq}-{manifest.last_seq} "
+            f"({manifest.events}) to {manifest.data_path}\n"
+            f"manifest: {manifest.path}\n"
+            "Copy both files to write-once storage, then run: zentral audit prune <manifest>"
+        )
+
+    try:
+        typer.echo(asyncio.run(main()))
+    except ArchiveError as exc:
+        typer.echo(f"refused: {exc}", err=True)
+        raise typer.Exit(1) from None
+
+
+@audit_app.command("verify-archive")
+def audit_verify_archive(manifest: Path) -> None:
+    """Verify an archive file against its signed manifest."""
+    from zentral.audit.archive import ArchiveError, verify_archive
+    from zentral.runtime import build_runtime
+
+    runtime = build_runtime(get_settings())
+    try:
+        result = verify_archive(manifest, runtime.trail)
+    except ArchiveError as exc:
+        typer.echo(f"INVALID: {exc}", err=True)
+        raise typer.Exit(1) from None
+    finally:
+        asyncio.run(runtime.aclose())
+    typer.echo(f"OK: events {result.first_seq}-{result.last_seq} ({result.events}) verified")
+
+
+@audit_app.command("prune")
+def audit_prune(
+    manifest: Path,
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm removal from the database.")] = False,
+) -> None:
+    """Remove archived events from the database, leaving a signed checkpoint."""
+    from zentral.audit.archive import ArchiveError, prune
+    from zentral.runtime import build_runtime
+    from zentral.security.principal import system_principal
+
+    if not yes:
+        typer.echo("This removes the archived events from the database. Re-run with --yes.")
+        raise typer.Exit(2)
+
+    async def main() -> int:
+        runtime = build_runtime(get_settings())
+        try:
+            async with runtime.sessions() as session:
+                return await prune(session, runtime.trail, manifest, system_principal("cli"))
+        finally:
+            await runtime.aclose()
+
+    try:
+        count = asyncio.run(main())
+    except ArchiveError as exc:
+        typer.echo(f"refused: {exc}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(f"removed {count} archived events; the chain now resumes after the checkpoint")
 
 
 if __name__ == "__main__":

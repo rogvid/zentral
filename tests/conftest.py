@@ -89,7 +89,7 @@ async def runtime(settings: Settings, outbound: OutboundRecorder) -> AsyncIterat
         if IS_POSTGRES:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
-            for statement in audit_guard.INSTALL:
+            for statement in (*audit_guard.INSTALL, *audit_guard.PRUNE_AWARE):
                 await conn.execute(text(statement))
         else:
             await conn.run_sync(Base.metadata.create_all)
@@ -148,6 +148,7 @@ async def as_db_superuser(db: AsyncSession) -> AsyncSession:
     chain* (the second line of defence) can be tested on its own."""
     if IS_POSTGRES:
         await db.execute(text("ALTER TABLE audit_events DISABLE TRIGGER USER"))
+        await db.execute(text("ALTER TABLE audit_checkpoints DISABLE TRIGGER USER"))
         await db.commit()
     return db
 

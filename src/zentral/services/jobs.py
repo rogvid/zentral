@@ -13,12 +13,16 @@ import asyncio
 import contextlib
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, time, timedelta
+from pathlib import Path
 
 import structlog
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from zentral.ai.service import classify_ticket
+from zentral.audit.archive import prune, verify_archive, write_archive
+from zentral.audit.trail import AuditTrail
 from zentral.connectors.base import (
     Capability,
     ConnectorError,
@@ -26,6 +30,7 @@ from zentral.connectors.base import (
     OutboundMessage,
 )
 from zentral.db.models import (
+    AuditCheckpoint,
     DeliveryStatus,
     IngestSource,
     Job,
@@ -35,6 +40,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.runtime import Runtime
+from zentral.security.principal import Principal
 from zentral.services import notifications, privacy
 from zentral.services.context import Ctx
 from zentral.services.ingest import ingest
@@ -58,6 +64,7 @@ class Worker:
             "poll_source": self._poll,
             "retention_sweep": self._retention,
             "escalation_sweep": self._escalate,
+            "audit_archive": self._audit_archive,
         }
 
     # -- queue mechanics -------------------------------------------------------------
@@ -174,7 +181,9 @@ class Worker:
             open_jobs = (
                 await session.scalars(
                     select(Job).where(
-                        Job.kind.in_(["poll_source", "retention_sweep", "escalation_sweep"]),
+                        Job.kind.in_(
+                            ["poll_source", "retention_sweep", "escalation_sweep", "audit_archive"]
+                        ),
                         Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
                     )
                 )
@@ -212,6 +221,12 @@ class Worker:
                         run_after=utcnow() + ESCALATION_INTERVAL,
                     )
                 )
+            if self.rt.settings.audit_archive_dir and not any(
+                j.kind == "audit_archive" for j in open_jobs
+            ):
+                session.add(
+                    Job(kind="audit_archive", payload={}, run_after=utcnow() + timedelta(hours=24))
+                )
             if not any(j.kind == "retention_sweep" for j in open_jobs):
                 session.add(
                     Job(kind="retention_sweep", payload={}, run_after=utcnow() + timedelta(hours=6))
@@ -246,6 +261,16 @@ class Worker:
     async def _escalate(self, ctx: Ctx, payload: dict[str, object]) -> None:
         """Warn about targets at risk, escalate missed ones."""
         await notifications.escalate(ctx)
+
+    async def _audit_archive(self, ctx: Ctx, payload: dict[str, object]) -> None:
+        """Archive yesterday's audit events; prune archives older than the keep period."""
+        settings = self.rt.settings
+        if not settings.audit_archive_dir:
+            return
+        directory = Path(settings.audit_archive_dir)
+        await run_audit_housekeeping(
+            ctx.session, self.rt.trail, directory, settings.audit_keep_days, ctx.principal
+        )
 
     async def _poll(self, ctx: Ctx, payload: dict[str, object]) -> None:
         source = await ctx.session.get(IngestSource, uuid.UUID(str(payload["source_id"])))
@@ -296,3 +321,39 @@ class Worker:
             message_id=str(message.id),
             connector=source.connector if source else "",
         )
+
+
+async def run_audit_housekeeping(
+    session: AsyncSession,
+    trail: AuditTrail,
+    directory: Path,
+    keep_days: int,
+    actor: Principal,
+) -> tuple[int, int]:
+    """Archive everything before today (UTC); prune archives whose newest event is
+    older than ``keep_days``.
+
+    Returns (events archived, events pruned). Archives already in the directory
+    are respected: a new one continues where the newest left off.
+    """
+    today = datetime.combine(utcnow().date(), time(0), UTC)
+    # Batch housekeeping, once a day: plain file I/O is fine here.
+    manifests = sorted(directory.glob("audit-*.manifest.json")) if directory.is_dir() else []  # noqa: ASYNC240
+    known = [verify_archive(path, trail) for path in manifests]
+    start_after = max((m.last_seq for m in known), default=0)
+    written = await write_archive(session, trail, today, directory, start_after=start_after)
+    await session.commit()
+    if written is not None:
+        known.append(written)
+    archived = written.events if written else 0
+    pruned = 0
+    if keep_days > 0:
+        cutoff = utcnow() - timedelta(days=keep_days)
+        for manifest in sorted(known, key=lambda m: m.first_seq):
+            if datetime.fromisoformat(manifest.last_occurred_at) > cutoff:
+                break  # holds events younger than the keep period
+            through = await session.scalar(select(func.max(AuditCheckpoint.seq))) or 0
+            if manifest.last_seq <= through:
+                continue  # pruned before
+            pruned += await prune(session, trail, manifest.path, actor)
+    return archived, pruned

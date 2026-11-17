@@ -61,7 +61,7 @@ test dumps the whole trail and asserts this. Example:
 | Privacy | `privacy.contact_lookup`, `privacy.exported`, `privacy.erased`, `privacy.ai_objection_recorded`, `privacy.ai_objection_withdrawn`, `retention.ticket_scrubbed`, `retention.contact_erased`, `contact.created` |
 | Administration | `team.created`, `team.deleted`, `team.member_added`, `team.member_removed`, `system.created`, `system.updated`, `system.deleted`, `source.created`, `source.updated`, `source.tested`, `source.failing`, `source.token_rotated`, `source.deleted`, `rule.created`, `rule.updated`, `rule.deleted`, `template.created`, `template.updated`, `template.deleted` |
 | Access control | `access.denied` |
-| Audit | `audit.read`, `audit.verified` |
+| Audit | `audit.read`, `audit.verified`, `audit.pruned` |
 
 ### Integrity
 

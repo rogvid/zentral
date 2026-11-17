@@ -108,6 +108,12 @@ class Settings(BaseSettings):
             "low": "business",
         }
     )
+    # Audit archiving: a directory (ideally on write-once storage) the worker writes a
+    # signed archive of the previous day's audit events to every day. Empty = off.
+    audit_archive_dir: str = ""
+    # Remove archived events from the database once they are this many days old
+    # (0 = keep them in the database as well). Needs ZENTRAL_AUDIT_ARCHIVE_DIR.
+    audit_keep_days: int = Field(default=0, ge=0, le=36500)
     # Warn when this share of a target's time is left (0.25 = the last quarter); 0 = never.
     # When a target is missed, the ticket's team is told as well as its assignee.
     escalation_warn_fraction: float = Field(default=0.25, ge=0, lt=1)
@@ -284,6 +290,8 @@ class Settings(BaseSettings):
             if any(hours <= 0 for hours in targets.values()):
                 problems.append(f"ZENTRAL_{name.upper()}: hours must be positive")
         problems.extend(self._calendar_problems())
+        if self.audit_keep_days and not self.audit_archive_dir:
+            problems.append("ZENTRAL_AUDIT_KEEP_DAYS needs ZENTRAL_AUDIT_ARCHIVE_DIR")
         if problems:
             raise ConfigurationError("Unsafe configuration:\n- " + "\n- ".join(problems))
 

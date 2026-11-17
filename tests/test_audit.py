@@ -33,7 +33,12 @@ async def test_modified_event_is_detected(client, auth, as_db_superuser):
     await seed(client, auth)
     await db.execute(update(AuditEvent).where(AuditEvent.seq == 2).values(actor_id="someone-else"))
     await db.commit()
-    assert await verify(client, auth) == {"ok": False, "checked": 1, "first_bad_seq": 2}
+    assert await verify(client, auth) == {
+        "ok": False,
+        "checked": 1,
+        "first_bad_seq": 2,
+        "archived_through": 0,
+    }
 
 
 async def test_modified_details_are_detected(client, auth, as_db_superuser):

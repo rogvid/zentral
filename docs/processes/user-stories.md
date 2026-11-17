@@ -67,7 +67,7 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | every access and change recorded, including refusals | I can reconstruct what happened | [Oversight](oversight.md) |
 | ✓ | proof that the record was not altered | the evidence holds | Hash chain, *Verify integrity* |
 | ✓ | to do this without seeing ticket content | auditing doesn't widen access | Auditor role |
-| ◻ | automated audit archiving and retention | the trail doesn't grow forever | Not yet: [manual runbook](../runbooks/audit-verification.md) |
+| ✓ **new** | automated audit archiving and retention | the trail doesn't grow forever, and the proof survives | [Archive and prune](../runbooks/audit-verification.md#archive-and-prune-keep-the-database-lean) |
 
 ## AI agent builder
 

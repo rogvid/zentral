@@ -34,7 +34,7 @@ import structlog
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from zentral.db.models import AuditEvent, utcnow
+from zentral.db.models import AuditCheckpoint, AuditEvent, utcnow
 from zentral.security.principal import Principal
 
 GENESIS_HASH = "0" * 64
@@ -65,6 +65,9 @@ class VerifyResult:
     ok: bool
     checked: int
     first_bad_seq: int | None = None
+    # Events up to here were archived and removed; the chain resumes after it.
+    archived_through: int = 0
+    reason: str = ""
 
 
 def _canonical(event: AuditEvent) -> bytes:
@@ -101,6 +104,40 @@ class AuditTrail:
     def _digest(self, prev_hash: str, event: AuditEvent, key: bytes | None = None) -> str:
         message = prev_hash.encode() + _canonical(event)
         return hmac.new(key or self._key, message, hashlib.sha256).hexdigest()
+
+    def matches(self, prev_hash: str, event: AuditEvent) -> bool:
+        """Whether ``event`` is correctly chained to ``prev_hash`` (any known key)."""
+        return self._matches(prev_hash, event)
+
+    def sign(self, payload: dict[str, Any]) -> str:
+        """HMAC of a canonical JSON document with the current audit key."""
+        message = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hmac.new(self._key, message, hashlib.sha256).hexdigest()
+
+    def signed_by_us(self, payload: dict[str, Any], signature: str) -> bool:
+        message = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return any(
+            hmac.compare_digest(signature, hmac.new(k, message, hashlib.sha256).hexdigest())
+            for k in self._verify_keys
+        )
+
+    @staticmethod
+    def checkpoint_payload(cp: AuditCheckpoint) -> dict[str, Any]:
+        return {
+            "kind": "zentral-audit-checkpoint/1",
+            "seq": cp.seq,
+            "hash": cp.hash,
+            "first_seq": cp.first_seq,
+            "events": cp.events,
+            "archive_sha256": cp.archive_sha256,
+            "created_by": cp.created_by,
+            "prev_signature": cp.prev_signature,
+        }
+
+    async def checkpoints(self, session: AsyncSession) -> list[AuditCheckpoint]:
+        return list(
+            (await session.scalars(select(AuditCheckpoint).order_by(AuditCheckpoint.seq))).all()
+        )
 
     def _matches(self, prev_hash: str, event: AuditEvent) -> bool:
         return any(
@@ -139,7 +176,22 @@ class AuditTrail:
                 select(AuditEvent.seq, AuditEvent.hash).order_by(AuditEvent.seq.desc()).limit(1)
             )
         ).first()
-        seq, prev_hash = (last.seq, last.hash) if last else (0, GENESIS_HASH)
+        if last is None:
+            # Everything so far may have been archived: continue after the checkpoint.
+            checkpoint = (
+                await session.execute(
+                    select(AuditCheckpoint.seq, AuditCheckpoint.hash)
+                    .order_by(AuditCheckpoint.seq.desc())
+                    .limit(1)
+                )
+            ).first()
+        seq, prev_hash = (
+            (last.seq, last.hash)
+            if last
+            else (checkpoint.seq, checkpoint.hash)
+            if checkpoint
+            else (0, GENESIS_HASH)
+        )
         for pending in events:
             seq += 1
             event = AuditEvent(
@@ -180,8 +232,32 @@ class AuditTrail:
         await session.flush()
 
     async def verify(self, session: AsyncSession, *, batch_size: int = 1000) -> VerifyResult:
+        """Verify the chain in the database.
+
+        Archived prefixes are vouched for by signed checkpoints, which must form
+        their own unbroken chain; the event chain then resumes after the newest
+        one. Events are never allowed to start anywhere else — removing old
+        events without a valid checkpoint is reported as tampering.
+        """
         prev_hash = GENESIS_HASH
         expected_seq = 1
+        prev_signature = GENESIS_HASH
+        for cp in await self.checkpoints(session):
+            if (
+                cp.prev_signature != prev_signature
+                or cp.first_seq != expected_seq
+                or cp.seq < cp.first_seq
+                or not self.signed_by_us(self.checkpoint_payload(cp), cp.signature)
+            ):
+                return VerifyResult(
+                    ok=False,
+                    checked=0,
+                    first_bad_seq=expected_seq,
+                    archived_through=expected_seq - 1,
+                    reason="invalid archive checkpoint",
+                )
+            prev_signature, prev_hash, expected_seq = cp.signature, cp.hash, cp.seq + 1
+        archived = expected_seq - 1
         checked = 0
         while True:
             rows = (
@@ -193,14 +269,20 @@ class AuditTrail:
                 )
             ).all()
             if not rows:
-                return VerifyResult(ok=True, checked=checked)
+                return VerifyResult(ok=True, checked=checked, archived_through=archived)
             for event in rows:
                 if (
                     event.seq != expected_seq
                     or event.prev_hash != prev_hash
                     or not self._matches(prev_hash, event)
                 ):
-                    return VerifyResult(ok=False, checked=checked, first_bad_seq=expected_seq)
+                    return VerifyResult(
+                        ok=False,
+                        checked=checked,
+                        first_bad_seq=expected_seq,
+                        archived_through=archived,
+                        reason="broken chain",
+                    )
                 prev_hash = event.hash
                 expected_seq += 1
                 checked += 1

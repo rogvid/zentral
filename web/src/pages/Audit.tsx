@@ -13,6 +13,7 @@ interface Verify {
   ok: boolean;
   checked: number;
   first_bad_seq: number | null;
+  archived_through: number;
 }
 
 export function AuditPage() {
@@ -53,7 +54,9 @@ export function AuditPage() {
       {verify && (
         <p className={verify.ok ? "success-banner" : "danger-banner"} role="status">
           {verify.ok
-            ? `Chain intact: ${verify.checked} events verified.`
+            ? `Chain intact: ${verify.checked} events verified.${
+                verify.archived_through ? ` Events 1–${verify.archived_through} are archived, vouched for by signed checkpoints.` : ""
+              }`
             : `Tampering detected at event #${verify.first_bad_seq}. Follow the incident runbook.`}
         </p>
       )}

@@ -73,7 +73,12 @@ async def verify_audit_chain(ctx: CtxDep) -> AuditVerifyOut:
         checked=result.checked,
     )
     await ctx.commit()
-    return AuditVerifyOut(ok=result.ok, checked=result.checked, first_bad_seq=result.first_bad_seq)
+    return AuditVerifyOut(
+        ok=result.ok,
+        checked=result.checked,
+        first_bad_seq=result.first_bad_seq,
+        archived_through=result.archived_through,
+    )
 
 
 # The e-mail address travels in the request body, not the URL, so that it does

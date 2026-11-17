@@ -19,6 +19,7 @@ from zentral.ai.base import ClassificationInput
 from zentral.config import ConfigurationError, Settings
 from zentral.runtime import Runtime, build_runtime
 from zentral.security.crypto import get_cipher
+from zentral.security.keys import custody_summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,11 @@ async def _database(rt: Runtime) -> CheckResult:
             "database", "fail", f"schema is at {current}, expected {head}: run `zentral db upgrade`"
         )
     return CheckResult("database", "ok", f"{rt.engine.dialect.name}, schema {current}")
+
+
+async def _key_custody(rt: Runtime) -> CheckResult:
+    status, detail = custody_summary(rt.settings)
+    return CheckResult("key custody", status, detail)
 
 
 async def _encryption(rt: Runtime) -> CheckResult:
@@ -150,6 +156,7 @@ async def run_checks(settings: Settings) -> list[CheckResult]:
     results = [CheckResult("configuration", "ok", f"env={settings.env}, auth={settings.auth_mode}")]
     checks: list[tuple[str, Callable[[Runtime], Awaitable[CheckResult]]]] = [
         ("database", _database),
+        ("key custody", _key_custody),
         ("encryption", _encryption),
         ("audit trail", _audit),
         ("identity provider", _identity),

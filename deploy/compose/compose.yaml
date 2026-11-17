@@ -24,6 +24,8 @@ x-zentral: &zentral
   restart: unless-stopped
   read_only: true
   tmpfs: [/tmp]
+  volumes:
+    - ./keys:/etc/zentral/keys:ro # keyring.json (+ Vault token): docs/operations/key-custody.md
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   user: "10001:10001"

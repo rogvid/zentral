@@ -31,7 +31,7 @@ cd deploy/compose
 
 ```bash
 cp .env.example .env && chmod 600 .env
-docker run --rm zentral:local keys generate >> .env    # three keys
+mkdir -p keys
 $EDITOR .env
 ```
 
@@ -42,9 +42,20 @@ Fill in:
 | `ZENTRAL_HOSTNAME`, `ZENTRAL_PUBLIC_BASE_URL`, `ZENTRAL_ALLOWED_HOSTS` | Your DNS name |
 | `POSTGRES_PASSWORD` | A long random string (`openssl rand -base64 32`) |
 | Identity block | Tenant and client IDs, or OIDC issuer/audience/client |
+| Keys block | Your Vault Transit or Key Vault key ([Key custody](key-custody.md)) |
 
-`keys generate` appended three lines at the end; remove the three empty
-placeholders above them. **Copy the three keys to your password manager now.**
+Create the keyring (in a shell whose Vault token or identity may *wrap*; the
+running services only need *unwrap*) and make the
+[escrow copy](key-custody.md#escrow-and-disaster-recovery):
+
+```bash
+docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/keys:/out" api \
+  keys init --output /out/keyring.json
+```
+
+No KMS available? The plain-text block in `.env.example` works, with
+`ZENTRAL_ALLOW_ENV_KEYS=true` — then **copy the three keys to your password
+manager now**, and know that anyone who can read `.env` can read all data.
 
 ## 3. Start
 

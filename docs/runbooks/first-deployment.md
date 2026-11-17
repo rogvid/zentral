@@ -11,7 +11,9 @@ the future Zentral administrator.
 - [ ] Decide where it runs: [Compose](../operations/deploy-compose.md) or
       [Kubernetes](../operations/deploy-kubernetes.md)
 - [ ] PostgreSQL 14+ available (or use the Compose-provided one)
-- [ ] A secret manager / password vault for the three keys
+- [ ] A key-encryption key in Azure Key Vault / Managed HSM or Vault Transit
+      ([Key custody](../operations/key-custody.md)), and a safe for the
+      offline escrow copy
 - [ ] Names of the first administrators, auditor and privacy officer
 - [ ] Your retention period (days) from your data-protection policy
 
@@ -22,13 +24,15 @@ the future Zentral administrator.
    [other OIDC provider](../operations/identity-oidc.md). Assign yourself
    `Zentral.Admin`.
 
-2. **Configuration and keys.** Generate keys (`zentral keys generate`) and fill
-   in the configuration as described in your platform guide.
+2. **Configuration and keys.** Set up the key provider and create the keyring
+   (`zentral keys init`) as described in
+   [Key custody](../operations/key-custody.md#new-installation), then fill in
+   the configuration as described in your platform guide.
 
-    !!! danger "Back up the keys now"
-        Store `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY` and
-        `ZENTRAL_AUDIT_HMAC_KEY` in your vault **before** any data exists.
-        Without the encryption key, the database is unreadable — permanently.
+    !!! danger "Make the escrow copy now"
+        Write the [offline escrow keyring](../operations/key-custody.md#escrow-and-disaster-recovery)
+        and turn on purge protection for the KMS key **before** any data
+        exists. Without the keys, the database is unreadable — permanently.
 
 3. **Start** the stack (platform guide). Migrations run automatically
    (Compose) or as the `zentral-migrate` Job (Kubernetes).

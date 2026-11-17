@@ -15,7 +15,7 @@ from zentral.connectors.base import Connector, ConnectorContext
 from zentral.connectors.registry import ConnectorRegistry
 from zentral.db.models import IngestSource
 from zentral.db.session import SessionFactory, create_engine, create_session_factory
-from zentral.security import crypto
+from zentral.security import crypto, keys
 from zentral.security.principal import Principal, system_principal
 from zentral.security.scanner import Scanner, build_scanner
 from zentral.services.context import Ctx
@@ -70,6 +70,9 @@ def build_runtime(
     ai: AIProvider | None = None,
     engine: AsyncEngine | None = None,
 ) -> Runtime:
+    # With a key provider, unwrap the keyring (one KMS/HSM call) before anything
+    # else; the keys then live only in this process's memory.
+    settings = keys.materialise(settings)
     settings.validate_for_runtime()
     crypto.configure(settings)
     engine = engine or create_engine(settings)

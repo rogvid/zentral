@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 import signal
 from datetime import UTC, date, datetime, time
@@ -38,7 +39,10 @@ def serve(
     """Run the API, MCP endpoint and web client."""
     import uvicorn
 
-    get_settings().validate_for_runtime()
+    from zentral.security.keys import materialise
+
+    # Fail before binding the port; the server process unwraps again for itself.
+    materialise(get_settings()).validate_for_runtime()
     uvicorn.run(
         "zentral.api.app:create_app",
         factory=True,
@@ -101,6 +105,22 @@ def init(
         "dev": "# Development sign-in: never expose this instance to a network.\n",
     }[auth]
     production = auth != "dev"
+    keys_block_production = (
+        "\n# --- keys: a keyring wrapped by your KMS (docs/operations/key-custody.md) ---\n"
+        "# Fill in, then create the keyring with `zentral keys init`.\n"
+        "ZENTRAL_KEY_PROVIDER=azure_keyvault\n"
+        "ZENTRAL_AZURE_KEYVAULT_KEY_ID=\n"
+        "# ZENTRAL_KEY_PROVIDER=vault_transit\n"
+        "# ZENTRAL_VAULT_ADDR=\n"
+        "# ZENTRAL_VAULT_TRANSIT_KEY=zentral\n"
+        "ZENTRAL_KEYRING_FILE=/etc/zentral/keys/keyring.json\n"
+    )
+    keys_block_development = (
+        "\n# --- keys (plain text: development only) ---\n"
+        f"ZENTRAL_ENCRYPTION_KEYS={generate_key()}\n"
+        f"ZENTRAL_BLIND_INDEX_KEY={secrets.token_urlsafe(48)}\n"
+        f"ZENTRAL_AUDIT_HMAC_KEY={secrets.token_urlsafe(48)}\n"
+    )
     base_url = "https://servicedesk.example.com" if production else "http://localhost:8000"
     hosts = "servicedesk.example.com" if production else "localhost,127.0.0.1"
     lines = (
@@ -117,11 +137,8 @@ def init(
             else "sqlite+aiosqlite:///./zentral-dev.db\n"
         )
         + f"\n# --- identity ---\nZENTRAL_AUTH_MODE={auth}\n{identity}"
-        "\n# --- keys (back these up separately from the database!) ---\n"
-        f"ZENTRAL_ENCRYPTION_KEYS={generate_key()}\n"
-        f"ZENTRAL_BLIND_INDEX_KEY={secrets.token_urlsafe(48)}\n"
-        f"ZENTRAL_AUDIT_HMAC_KEY={secrets.token_urlsafe(48)}\n"
-        "\n# --- AI classification (rules = no model, nothing leaves the process) ---\n"
+        + (keys_block_production if production else keys_block_development)
+        + "\n# --- AI classification (rules = no model, nothing leaves the process) ---\n"
         "ZENTRAL_AI_PROVIDER=rules\n"
         "# ZENTRAL_AI_PROVIDER=openai_compatible\n"
         "# ZENTRAL_AI_BASE_URL=http://ollama:11434/v1\n"
@@ -181,9 +198,29 @@ def db_current() -> None:
     command.current(_alembic_config())
 
 
+# Every encrypted column: (table, primary key, column). Compile-time constants.
+ENCRYPTED_COLUMNS = (
+    ("tickets", "id", "subject"),
+    ("tickets", "id", "ai_summary"),
+    ("tickets", "id", "thread_ref"),
+    ("messages", "id", "body"),
+    ("contacts", "id", "email"),
+    ("contacts", "id", "display_name"),
+    ("ingest_sources", "id", "secrets"),
+    ("reply_templates", "id", "body"),
+    ("ratings", "ticket_id", "comment"),
+    ("attachments", "id", "filename"),
+    ("attachments", "id", "data"),
+)
+
+
 @keys_app.command("generate")
 def keys_generate() -> None:
-    """Print a fresh set of keys as environment variables. Store them in a secret manager."""
+    """Print a fresh set of keys as plain-text environment variables.
+
+    For development, or as input to `zentral keys wrap`. In production use
+    `zentral keys init` instead, so the keys are never displayed.
+    """
     from zentral.security.crypto import generate_key
 
     typer.echo(f"ZENTRAL_ENCRYPTION_KEYS={generate_key()}")
@@ -193,26 +230,13 @@ def keys_generate() -> None:
 
 @keys_app.command("rotate")
 def keys_rotate(batch: int = 500) -> None:
-    """Re-encrypt all stored data under the first key in ZENTRAL_ENCRYPTION_KEYS.
+    """Re-encrypt all stored data under the newest field-encryption key.
 
-    Run after prepending a new key. When it finishes, the old key can be removed.
+    Run after `zentral keys add-data-key` (or after prepending a key to
+    ZENTRAL_ENCRYPTION_KEYS) and restarting. Then retire the old key.
     """
     from zentral.runtime import build_runtime
     from zentral.security.crypto import get_cipher
-
-    columns = [
-        ("tickets", "id", "subject"),
-        ("tickets", "id", "ai_summary"),
-        ("tickets", "id", "thread_ref"),
-        ("messages", "id", "body"),
-        ("contacts", "id", "email"),
-        ("contacts", "id", "display_name"),
-        ("ingest_sources", "id", "secrets"),
-        ("reply_templates", "id", "body"),
-        ("ratings", "ticket_id", "comment"),
-        ("attachments", "id", "filename"),
-        ("attachments", "id", "data"),
-    ]
 
     async def main() -> int:
         runtime = build_runtime(get_settings())
@@ -220,8 +244,7 @@ def keys_rotate(batch: int = 500) -> None:
         total = 0
         try:
             async with runtime.engine.begin() as conn:
-                for table, pk, column in columns:
-                    # Identifiers are compile-time constants from the list above.
+                for table, pk, column in ENCRYPTED_COLUMNS:
                     select = text(f"SELECT {pk}, {column} FROM {table} WHERE {column} IS NOT NULL")  # noqa: S608 # nosec B608
                     update = text(f"UPDATE {table} SET {column} = :v WHERE {pk} = :k")  # noqa: S608 # nosec B608
                     rows = (await conn.execute(select)).all()
@@ -236,6 +259,221 @@ def keys_rotate(batch: int = 500) -> None:
         return total
 
     typer.echo(f"re-encrypted {asyncio.run(main())} values")
+
+
+# --- keyring (envelope encryption with a KMS / HSM) -----------------------------
+
+OutputOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--output",
+        "-o",
+        help="Keyring file to write (default: ZENTRAL_KEYRING_FILE, keeping a dated backup).",
+    ),
+]
+
+
+def _keyring_target(output: Path | None) -> Path:
+    settings = get_settings()
+    if output is not None:
+        return output
+    if settings.keyring_file:
+        return Path(settings.keyring_file)
+    typer.echo("no --output given and ZENTRAL_KEYRING_FILE is not set", err=True)
+    raise typer.Exit(1)
+
+
+def _seal_and_write(material: object, target: Path, *, provider: str | None = None) -> None:
+    """Seal, prove the result opens, then write. Never prints key material."""
+    from zentral.security import keys
+
+    assert isinstance(material, keys.KeyMaterial)
+    settings = get_settings()
+    try:
+        with keys.provider_http() as http:
+            wrapper = keys.load_provider(settings, http, name=provider, for_escrow=bool(provider))
+            document = keys.seal(material, wrapper)
+            if keys.open_keyring(document, wrapper) != material:
+                raise keys.KeyCustodyError("the new keyring did not open to the same keys")
+    except keys.KeyCustodyError as exc:
+        typer.echo(f"✗ {exc}", err=True)
+        raise typer.Exit(1) from None
+    kept = keys.write_keyring(target, document)
+    typer.echo(f"wrote {target} ({document['provider']}, KEK {document['kek']})")
+    if kept:
+        typer.echo(f"previous keyring kept as {kept}")
+
+
+def _open_current() -> object:
+    from zentral.security import keys
+
+    settings = get_settings()
+    try:
+        source = keys.read_keyring(settings)
+        with keys.provider_http() as http:
+            return keys.open_keyring(source.document, keys.load_provider(settings, http))
+    except keys.KeyCustodyError as exc:
+        typer.echo(f"✗ {exc}", err=True)
+        raise typer.Exit(1) from None
+
+
+@keys_app.command("init")
+def keys_init(output: OutputOption = None, force: bool = False) -> None:
+    """Create a keyring with fresh keys for a NEW installation. Keys are never shown."""
+    from zentral.security.keys import KeyMaterial
+
+    target = _keyring_target(output)
+    if target.exists() and not force:
+        typer.echo(f"{target} already exists (use --force to replace it)", err=True)
+        raise typer.Exit(1)
+    _seal_and_write(KeyMaterial.generate(), target)
+
+
+@keys_app.command("wrap")
+def keys_wrap(output: OutputOption = None, force: bool = False) -> None:
+    """Move an existing installation's plain-text keys into a keyring.
+
+    Run once in an administrator's shell that has both the current
+    ZENTRAL_ENCRYPTION_KEYS / _BLIND_INDEX_KEY / _AUDIT_HMAC_KEY(_PREVIOUS_KEYS)
+    and the key provider settings. Then remove the plain-text keys from the
+    deployment and set ZENTRAL_KEYRING_FILE.
+    """
+    from zentral.security.keys import KeyMaterial
+
+    target = _keyring_target(output)
+    if target.exists() and not force:
+        typer.echo(f"{target} already exists (use --force to replace it)", err=True)
+        raise typer.Exit(1)
+    material = KeyMaterial.from_settings(get_settings())
+    problems = material.problems()
+    if problems:
+        typer.echo("✗ the environment does not hold valid keys: " + "; ".join(problems), err=True)
+        raise typer.Exit(1)
+    _seal_and_write(material, target)
+
+
+@keys_app.command("rewrap")
+def keys_rewrap(
+    output: OutputOption = None,
+    to_provider: Annotated[
+        str | None,
+        typer.Option(help="Wrap with this provider instead (e.g. local_file for an escrow copy)."),
+    ] = None,
+) -> None:
+    """Wrap the same keys under the newest KEK version (after rotating the KEK).
+
+    Nothing in the database changes. With --to-provider, writes a copy wrapped
+    by another provider: for an offline escrow copy, or to move providers.
+    """
+    _seal_and_write(_open_current(), _keyring_target(output), provider=to_provider)
+
+
+@keys_app.command("add-data-key")
+def keys_add_data_key(output: OutputOption = None) -> None:
+    """Add a new field-encryption key to the keyring (step 1 of a key rotation)."""
+    from zentral.security.keys import KeyMaterial
+
+    material = _open_current()
+    assert isinstance(material, KeyMaterial)
+    _seal_and_write(material.with_new_data_key(), _keyring_target(output))
+    typer.echo(
+        "next: restart API and worker, run `zentral keys rotate`, "
+        "then `zentral keys retire-data-keys`"
+    )
+
+
+@keys_app.command("retire-data-keys")
+def keys_retire_data_keys(output: OutputOption = None) -> None:
+    """Drop all but the newest field-encryption key — only once nothing needs them.
+
+    Checks every encrypted value first and refuses if any still needs an old key.
+    """
+    from cryptography.fernet import Fernet, InvalidToken
+
+    from zentral.runtime import build_runtime
+    from zentral.security.keys import KeyMaterial
+
+    material = _open_current()
+    assert isinstance(material, KeyMaterial)
+    if len(material.encryption_keys) == 1:
+        typer.echo("only one field-encryption key: nothing to retire")
+        return
+    primary = Fernet(material.encryption_keys[0].encode())
+
+    async def stale() -> int:
+        runtime = build_runtime(get_settings())
+        count = 0
+        try:
+            async with runtime.engine.connect() as conn:
+                for table, _pk, column in ENCRYPTED_COLUMNS:
+                    select = text(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")  # noqa: S608 # nosec B608
+                    for (value,) in (await conn.execute(select)).all():
+                        try:
+                            primary.decrypt(value.encode("ascii"))
+                        except InvalidToken:
+                            count += 1
+        finally:
+            await runtime.aclose()
+        return count
+
+    remaining = asyncio.run(stale())
+    if remaining:
+        typer.echo(
+            f"✗ {remaining} value(s) still need an older key: run `zentral keys rotate` first",
+            err=True,
+        )
+        raise typer.Exit(1)
+    _seal_and_write(material.without_old_data_keys(), _keyring_target(output))
+    typer.echo("keep the backup keyring until every database backup older than today has expired")
+
+
+@keys_app.command("rotate-audit-key")
+def keys_rotate_audit_key(output: OutputOption = None) -> None:
+    """Start signing the audit trail with a new key; the old one still verifies."""
+    from zentral.security.keys import KeyMaterial
+
+    material = _open_current()
+    assert isinstance(material, KeyMaterial)
+    _seal_and_write(material.with_new_audit_key(), _keyring_target(output))
+    typer.echo("next: restart API and worker, then `zentral audit verify`")
+
+
+@keys_app.command("show")
+def keys_show() -> None:
+    """Describe the keyring: provider, KEK and key fingerprints (never the keys)."""
+    from zentral.security.keys import KeyMaterial, fingerprint, read_keyring
+
+    settings = get_settings()
+    if settings.key_provider == "env":
+        typer.echo("ZENTRAL_KEY_PROVIDER=env: keys are read from the environment, no keyring")
+        return
+    document = read_keyring(settings).document
+    material = _open_current()
+    assert isinstance(material, KeyMaterial)
+    typer.echo(f"provider:   {document['provider']}")
+    typer.echo(f"KEK:        {document['kek']}")
+    typer.echo(f"sealed:     {document['created']}")
+    data_keys = ", ".join(fingerprint(k) for k in material.encryption_keys)
+    typer.echo(f"data keys:  {data_keys}  (first encrypts)")
+    typer.echo(f"index key:  {fingerprint(material.blind_index_key)}")
+    typer.echo(f"audit key:  {fingerprint(material.audit_hmac_key)}")
+    if material.audit_hmac_previous_keys:
+        retired = ", ".join(fingerprint(k) for k in material.audit_hmac_previous_keys)
+        typer.echo(f"retired audit keys: {retired}")
+
+
+@keys_app.command("new-local-kek")
+def keys_new_local_kek(output: Path, force: bool = False) -> None:
+    """Write a key file for the local_file provider (development, offline escrow)."""
+    from zentral.security.key_providers.local import generate_kek
+
+    if output.exists() and not force:
+        typer.echo(f"{output} already exists (use --force to replace it)", err=True)
+        raise typer.Exit(1)
+    fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="ascii") as fh:
+        fh.write(generate_kek() + "\n")
+    typer.echo(f"wrote {output} (mode 600). Whoever reads it can open keyrings wrapped by it.")
 
 
 @audit_app.command("verify")

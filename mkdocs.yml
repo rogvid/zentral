@@ -107,6 +107,7 @@ nav:
       - Identity — Microsoft Entra ID: operations/identity-entra.md
       - Identity — other OIDC providers: operations/identity-oidc.md
       - Configuration reference: operations/configuration.md
+      - Key custody (KMS / HSM): operations/key-custody.md
       - Monitoring and logs: operations/monitoring.md
   - Runbooks:
       - Index: runbooks/index.md

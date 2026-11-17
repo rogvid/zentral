@@ -5,7 +5,7 @@
 | What | Where it is | Notes |
 |---|---|---|
 | **The PostgreSQL database** | Your database server / the `db-data` volume | Everything: tickets, audit trail, configuration, job queue |
-| **The three keys** | Your secret manager | `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` (and any retired keys) |
+| **The keys** | The keyring file (and its `.bak` versions) plus the KMS key; the offline escrow keyring | See [Key custody](../operations/key-custody.md#escrow-and-disaster-recovery). With plain-text keys: `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` (and any retired keys) in your secret manager |
 | Deployment configuration | Your Git repository / `.env` | Reproducible, but saves time |
 
 !!! danger "Keys and database go in different places"
@@ -69,8 +69,12 @@ environment.
         pg_restore -d zentral_restored --no-owner zentral-20261116T020000Z.dump
         ```
 
-3. **Provide the keys that were in use when the backup was taken.** If keys
-   were rotated since, put the old encryption key in the list as well.
+3. **Provide the keys that were in use when the backup was taken.** With a
+   keyring: if the data or audit key was changed since, point
+   `ZENTRAL_KEYRING_FILE` at the `keyring.json.<timestamp>.bak` that was
+   current at backup time (then run `zentral keys rotate` to move the data
+   onto today's key). With plain-text keys: put the old encryption key in the
+   list as well.
 
 4. **Check before starting:**
 
@@ -113,7 +117,9 @@ Drop the scratch database afterwards — it contains personal data.
 ## Disaster recovery in a new environment
 
 1. Deploy Zentral per the [first-deployment runbook](first-deployment.md), steps
-   1–3, using the **original keys** and identity settings.
+   1–3, using the **original keyring** (and access to its KMS key — or the
+   [escrow copy](../operations/key-custody.md#escrow-and-disaster-recovery)
+   if the KMS is gone) and identity settings.
 2. Restore the database as above.
 3. If the public hostname changed: update `ZENTRAL_PUBLIC_BASE_URL`,
    `ZENTRAL_ALLOWED_HOSTS`, the redirect URI in the identity provider, and the

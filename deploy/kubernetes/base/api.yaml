@@ -16,7 +16,9 @@ spec:
       labels:
         app.kubernetes.io/name: zentral-api
         zentral.dev/db-client: "true"
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: zentral
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -60,9 +62,12 @@ spec:
             limits: { memory: 512Mi }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: keyring, mountPath: /etc/zentral/keys, readOnly: true }
       volumes:
         - name: tmp
           emptyDir: { medium: Memory, sizeLimit: 16Mi }
+        - name: keyring
+          configMap: { name: zentral-keyring }
 ---
 apiVersion: v1
 kind: Service

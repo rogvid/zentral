@@ -108,6 +108,7 @@ is no channel to send through.
 |---|---|
 | `Unsafe configuration: …` | Read the list; each item names the variable. These checks cannot be bypassed in production |
 | `ciphertext could not be decrypted with any configured key` | Wrong `ZENTRAL_ENCRYPTION_KEYS` for this database |
+| `Key Vault refused …`, `Vault refused …`, `keyring …` | See [Key custody → Troubleshooting](../operations/key-custody.md#troubleshooting) |
 | `/readyz` says schema does not match | Run `zentral db upgrade` (or wait for the migrate job) |
 | `error parsing value for field …` | A list or mapping setting is malformed — use `a,b,c` |
 

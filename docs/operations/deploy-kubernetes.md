@@ -67,12 +67,26 @@ kubectl create namespace zentral
 kubectl label namespace zentral pod-security.kubernetes.io/enforce=restricted
 
 cp deploy/kubernetes/base/secrets.env.example secrets.env && chmod 600 secrets.env
-docker run --rm registry.example.com/zentral:0.1.0 keys generate   # paste into secrets.env
 $EDITOR secrets.env                                                # database URL
-
 kubectl -n zentral create secret generic zentral-secrets --from-env-file=secrets.env
-shred -u secrets.env      # after storing the keys in your vault
+shred -u secrets.env
 ```
+
+The keys are not Kubernetes Secrets: they live in a keyring wrapped by Azure
+Key Vault (or Vault Transit) — see [Key custody](key-custody.md). Create the
+Key Vault key and an Entra managed identity federated with the `zentral`
+service account (unwrap permission only), set its client ID on
+`serviceaccount.yaml` and the key ID in the ConfigMap (overlay patches), then,
+as an administrator with wrap permission:
+
+```bash
+ZENTRAL_KEY_PROVIDER=azure_keyvault \
+ZENTRAL_AZURE_KEYVAULT_KEY_ID=https://your-vault.vault.azure.net/keys/zentral-kek \
+  zentral keys init --output keyring.json
+kubectl -n zentral create configmap zentral-keyring --from-file=keyring.json
+```
+
+Make the [escrow copy](key-custody.md#escrow-and-disaster-recovery) now.
 
 Better: keep the values in your vault and sync them with External Secrets
 Operator or the Secrets Store CSI driver, so they never exist as a file. Enable

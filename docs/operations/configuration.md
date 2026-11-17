@@ -16,7 +16,7 @@ in the working directory is read too). Generate a starting point with
 | **Keys** | `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` |
 | **AI** | `ZENTRAL_AI_PROVIDER`, `ZENTRAL_AI_BASE_URL`, `ZENTRAL_AI_MODEL`, `ZENTRAL_AI_MIN_CONFIDENCE` |
 | **Data protection** | `ZENTRAL_RETENTION_DAYS`, `ZENTRAL_AI_REDACT_PII` |
-| **Process** | `ZENTRAL_CATEGORIES`, `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE`, `ZENTRAL_TICKET_PREFIX`, `ZENTRAL_SLA_RESPONSE_HOURS`, `ZENTRAL_SLA_RESOLVE_HOURS`, `ZENTRAL_SLA_CALENDAR`, `ZENTRAL_BUSINESS_HOURS`, `ZENTRAL_TIMEZONE`, `ZENTRAL_HOLIDAYS`, `ZENTRAL_AUTO_CLOSE_DAYS` |
+| **Process** | `ZENTRAL_CATEGORIES`, `ZENTRAL_REQUIRE_SYSTEM_TO_RESOLVE`, `ZENTRAL_TICKET_PREFIX`, `ZENTRAL_SLA_RESPONSE_HOURS`, `ZENTRAL_SLA_RESOLVE_HOURS`, `ZENTRAL_SLA_CALENDAR`, `ZENTRAL_BUSINESS_HOURS`, `ZENTRAL_TIMEZONE`, `ZENTRAL_HOLIDAYS`, `ZENTRAL_ESCALATION_WARN_FRACTION`, `ZENTRAL_AUTO_CLOSE_DAYS` |
 | **Plug-ins** | `ZENTRAL_ENABLED_CONNECTORS`, `ZENTRAL_OUTBOUND_HOST_ALLOWLIST` |
 
 ## Notes on individual settings
@@ -58,6 +58,11 @@ in the working directory is read too). Generate a starting point with
     `urgent=24x7,high=business,normal=business,low=business` — an urgent
     ticket on Friday evening is due Friday evening; a normal one waits for
     Monday morning.
+
+`ZENTRAL_ESCALATION_WARN_FRACTION`
+:   When a target counts as "due soon": the share of its time that is left.
+    `0.25` warns in the last quarter; `0` turns warnings off (missed targets
+    still escalate to the team).
 
 `ZENTRAL_AUTO_CLOSE_DAYS`
 :   Days a resolved ticket waits before it is closed; `0` turns it off.
@@ -129,6 +134,7 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_TIMEZONE` | `UTC` | str |
 | `ZENTRAL_HOLIDAYS` | *(empty)* | list[str] |
 | `ZENTRAL_SLA_CALENDAR` | `{'urgent': '24x7', 'high': 'business', 'normal': 'business', 'low': 'business'}` | dict[str, str] |
+| `ZENTRAL_ESCALATION_WARN_FRACTION` | `0.25` | float |
 | `ZENTRAL_AUTO_CLOSE_DAYS` | `7` | int |
 | `ZENTRAL_AUTH_MODE` | `entra` | one of ['entra', 'oidc', 'dev'] |
 | `ZENTRAL_ROLE_MAP` | *(empty)* | dict[str, str] |

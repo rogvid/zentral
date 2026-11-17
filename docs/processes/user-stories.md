@@ -31,7 +31,7 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ | internal notes that can never reach the requester | I can think aloud safely | Notes |
 | ✓ | to see what happened to a ticket, by whom | handovers are easy | Activity |
 | ✓ | drafts that survive switching tickets | I can look something up mid-reply | Composer |
-| ◻ | to be notified when a ticket is assigned to me or becomes overdue | I don't have to keep checking | Not yet: needs a staff notification channel (e-mail or Teams) |
+| ✓ **new** | to be notified when a ticket is assigned to me, the requester replies, or a target is in danger | I don't have to keep checking | [Notifications](../guides/agents.md#notifications); in-app and desktop alerts |
 | ✓ **new** | saved replies for common answers | I answer faster and consistently | Saved replies, per team |
 | ✓ **new** | to merge duplicate tickets | one problem is one ticket | [Merge](lifecycle.md#duplicates) |
 
@@ -48,7 +48,7 @@ they matter; they are candidates for the roadmap, not promises.
 | ✓ **new** | resolved tickets to close by themselves | the queue stays honest | Auto-close |
 | ✓ **new** | targets that follow business hours and holidays | an urgent ticket on Friday night is fair | [Which hours count](lifecycle.md#which-hours-count) |
 | ✓ **new** | targets that differ per system | the payments platform can promise more | [Targets per system](../guides/systems.md#targets-per-system) |
-| ◻ | escalation when a target is about to break | someone acts before it is late | Not yet: depends on notifications |
+| ✓ **new** | escalation when a target is about to break | someone acts before it is late | [Escalation](lifecycle.md#when-a-target-is-in-danger) |
 
 ## Privacy officer
 

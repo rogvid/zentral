@@ -108,6 +108,9 @@ class Settings(BaseSettings):
             "low": "business",
         }
     )
+    # Warn when this share of a target's time is left (0.25 = the last quarter); 0 = never.
+    # When a target is missed, the ticket's team is told as well as its assignee.
+    escalation_warn_fraction: float = Field(default=0.25, ge=0, lt=1)
     # Resolved tickets close automatically after this many days without a reply (0 = never).
     auto_close_days: int = Field(default=7, ge=0, le=365)
 

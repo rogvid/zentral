@@ -220,6 +220,11 @@ class Ticket(Base):
     paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     paused_seconds: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
+    # The furthest escalation sent per target ("at_risk", "breached"); cleared
+    # whenever the targets are re-planned, so new deadlines warn again.
+    response_alert: Mapped[str | None] = mapped_column(String(16))
+    resolve_alert: Mapped[str | None] = mapped_column(String(16))
+
     # Set when this ticket was folded into another; replies follow it there.
     merged_into_id: Mapped[int | None] = mapped_column(
         ForeignKey("tickets.id", ondelete="SET NULL"), index=True
@@ -256,6 +261,25 @@ class Message(Base):
     ticket: Mapped[Ticket] = relationship(back_populates="messages")
 
     __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_messages_dedupe"),)
+
+
+class Notification(Base):
+    """Something a staff member should know about a ticket.
+
+    Deliberately content-free: a kind and a ticket number. Whoever opens the
+    ticket goes through the normal permission checks and audit trail.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (Index("ix_notifications_user", "user_id", "created_at"),)
 
 
 class ReplyTemplate(Base):

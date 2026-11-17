@@ -78,6 +78,23 @@ Changing the priority moves the targets. How the clock works is drawn out in
 A resolved ticket that nobody reopens is closed automatically after a few
 days (7 by default). A reply after that starts a new ticket.
 
+## Notifications
+
+The bell in the sidebar tells you when:
+
+| You see | When |
+|---|---|
+| Assigned to you | Someone else assigned a ticket to you |
+| The requester replied | A new message arrived on a ticket assigned to you |
+| First reply / Resolution due soon | The last quarter of a target's time has started on your ticket — or on an unassigned ticket in your team |
+| First reply / Resolution overdue | A target was missed. The whole team hears about it, not only the assignee |
+
+A notification holds a ticket key and what happened — never what the ticket
+says — so it is safe to show on a shared screen. Opening the ticket marks its
+notifications read. Tick **Desktop alerts on this device** to get them from your
+browser too, while Zentral is open in a tab. Notifications are deleted after 30
+days once read, after 90 days otherwise.
+
 ## Insights
 
 **Insights** in the sidebar shows how the desk is doing over the last 7–365

@@ -66,6 +66,11 @@ class Ctx:
 
     async def commit(self) -> None:
         """Commit the transaction together with its audit events."""
+        if not self._events:
+            # Nothing to chain: do not hold the chain lock (on SQLite an in-process
+            # lock) while this transaction's own writes block other writers.
+            await self.session.commit()
+            return
         async with self.trail.serialized(self.session):
             await self.trail.write(self.session, self._events, self.principal, self.meta)
             self._events.clear()

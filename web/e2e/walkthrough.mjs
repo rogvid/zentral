@@ -79,6 +79,18 @@ await as(browser, "agent", async (page) => {
   await page.keyboard.press("/");
   check((await page.evaluate(() => document.activeElement?.getAttribute("type"))) === "search", '"/" focuses search');
 
+  // The bell says what happened, never what the ticket says.
+  await page.getByRole("button", { name: /Notifications, \d+ unread/ }).click();
+  const item = page.locator(".bell-list li", { hasText: "Assigned to you" }).first();
+  await item.waitFor();
+  check(/^ZEN-\d+ Assigned to you/.test((await item.locator(".bell-text").innerText()).trim()), "notification is content-free");
+  await shot(page, "notifications");
+  await item.locator("a").click();
+  await page.waitForSelector(".thread .msg");
+  await page.getByRole("button", { name: "Notifications", exact: true }).waitFor();
+  await go(page, "");
+  await page.waitForSelector(".table tbody tr");
+
   await page.getByRole("link", { name: /Cannot sign in/ }).click();
   await page.waitForSelector(".thread .msg");
   check(/ZEN-\d+ · Zentral/.test(await page.title()), "ticket page title");

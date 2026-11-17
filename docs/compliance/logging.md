@@ -55,7 +55,7 @@ test dumps the whole trail and asserts this. Example:
 
 | Area | Actions |
 |---|---|
-| Tickets | `ticket.created`, `ticket.ingested`, `ticket.message_received`, `ticket.read`, `ticket.list`, `ticket.messages.read`, `ticket.updated`, `ticket.note_added`, `ticket.replied`, `ticket.acknowledged`, `ticket.auto_closed`, `ticket.merged`, `ticket.merge_received` |
+| Tickets | `ticket.created`, `ticket.ingested`, `ticket.message_received`, `ticket.read`, `ticket.list`, `ticket.messages.read`, `ticket.updated`, `ticket.note_added`, `ticket.replied`, `ticket.acknowledged`, `ticket.auto_closed`, `ticket.merged`, `ticket.merge_received`, `ticket.escalated` |
 | Delivery | `message.delivered`, `message.delivery_failed` |
 | AI | `ticket.classified`, `ticket.classification_skipped`, `automation.rule_applied` |
 | Privacy | `privacy.contact_lookup`, `privacy.exported`, `privacy.erased`, `privacy.ai_objection_recorded`, `privacy.ai_objection_withdrawn`, `retention.ticket_scrubbed`, `retention.contact_erased`, `contact.created` |

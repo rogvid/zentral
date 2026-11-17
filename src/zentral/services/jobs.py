@@ -35,7 +35,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.runtime import Runtime
-from zentral.services import privacy
+from zentral.services import notifications, privacy
 from zentral.services.context import Ctx
 from zentral.services.ingest import ingest
 from zentral.services.tickets import auto_close, ticket_key
@@ -46,6 +46,7 @@ MAX_ATTEMPTS = 5
 VISIBILITY_TIMEOUT = timedelta(minutes=15)
 DONE_TTL = timedelta(days=1)
 FAILED_TTL = timedelta(days=30)
+ESCALATION_INTERVAL = timedelta(minutes=5)
 
 
 class Worker:
@@ -56,6 +57,7 @@ class Worker:
             "send_message": self._send,
             "poll_source": self._poll,
             "retention_sweep": self._retention,
+            "escalation_sweep": self._escalate,
         }
 
     # -- queue mechanics -------------------------------------------------------------
@@ -172,7 +174,7 @@ class Worker:
             open_jobs = (
                 await session.scalars(
                     select(Job).where(
-                        Job.kind.in_(["poll_source", "retention_sweep"]),
+                        Job.kind.in_(["poll_source", "retention_sweep", "escalation_sweep"]),
                         Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
                     )
                 )
@@ -202,6 +204,14 @@ class Worker:
                     )
                 )
             )
+            if not any(j.kind == "escalation_sweep" for j in open_jobs):
+                session.add(
+                    Job(
+                        kind="escalation_sweep",
+                        payload={},
+                        run_after=utcnow() + ESCALATION_INTERVAL,
+                    )
+                )
             if not any(j.kind == "retention_sweep" for j in open_jobs):
                 session.add(
                     Job(kind="retention_sweep", payload={}, run_after=utcnow() + timedelta(hours=6))
@@ -231,6 +241,11 @@ class Worker:
             await ctx.commit()
         while await privacy.retention_sweep(ctx):
             await ctx.commit()
+        await notifications.purge(ctx)
+
+    async def _escalate(self, ctx: Ctx, payload: dict[str, object]) -> None:
+        """Warn about targets at risk, escalate missed ones."""
+        await notifications.escalate(ctx)
 
     async def _poll(self, ctx: Ctx, payload: dict[str, object]) -> None:
         source = await ctx.session.get(IngestSource, uuid.UUID(str(payload["source_id"])))

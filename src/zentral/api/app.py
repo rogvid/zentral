@@ -19,7 +19,7 @@ from zentral import __version__
 from zentral.api.deps import request_meta
 from zentral.api.middleware import HardeningMiddleware, McpPathMiddleware
 from zentral.api.ratelimit import RateLimiter
-from zentral.api.routes import admin, compliance, hooks, meta, tickets
+from zentral.api.routes import admin, compliance, hooks, meta, notifications, tickets
 from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
 from zentral.logging import configure_logging
@@ -98,7 +98,13 @@ def create_app(
 
     # --- routes -----------------------------------------------------------------------
     app.include_router(meta.router)
-    for router in (tickets.router, admin.router, compliance.router, hooks.router):
+    for router in (
+        tickets.router,
+        notifications.router,
+        admin.router,
+        compliance.router,
+        hooks.router,
+    ):
         app.include_router(router, prefix="/api/v1")
 
     if dev_issuer is not None:

@@ -26,7 +26,7 @@ from zentral.db.models import (
     utcnow,
 )
 from zentral.security.crypto import get_cipher
-from zentral.services import sla
+from zentral.services import notifications, sla
 from zentral.services.context import Ctx
 from zentral.services.tickets import (
     apply_system,
@@ -125,6 +125,8 @@ async def ingest(ctx: Ctx, source: IngestSource, msg: InboundMessage) -> IngestO
             await ctx.session.delete(ticket)
         return IngestOutcome(winner, ticket_key(ctx, winner), created=False, duplicate=True)
 
+    if not created and ticket.assignee_id:
+        notifications.notify(ctx, {ticket.assignee_id}, "requester_replied", ticket.id)
     if created:
         ctx.session.add(Job(kind="classify_ticket", payload={"ticket_id": ticket.id}))
         if contact is not None and contact.email and source.config.get("acknowledge_new_tickets"):

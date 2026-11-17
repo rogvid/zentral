@@ -65,6 +65,9 @@ def refresh_targets(ticket: Ticket, settings: Settings) -> None:
     paused = (ticket.paused_seconds or 0) / 3600
     ticket.response_due_at = calendar.add(created, response) if response else None
     ticket.resolve_due_at = calendar.add(created, resolve + paused) if resolve else None
+    # New deadlines deserve new warnings.
+    ticket.response_alert = None
+    ticket.resolve_alert = None
 
 
 def status_changed(ticket: Ticket, old: str, new: str, settings: Settings) -> None:

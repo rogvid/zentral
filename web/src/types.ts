@@ -217,3 +217,17 @@ export interface Template {
   team_name: string | null;
   updated_at: string;
 }
+
+export interface AppNotification {
+  id: string;
+  kind: string;
+  ticket_id: number;
+  ticket_key: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationPage {
+  items: AppNotification[];
+  unread: number;
+}

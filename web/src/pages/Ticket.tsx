@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { refreshNotifications } from "../components/Notifications";
 import { useApp, useLoad } from "../context";
 import { channelName, fillTemplate, percent, relativeTime, titleCase, until } from "../lib";
 import type { Activity, Message, Priority, Status, SystemInfo, TargetState, Team, Template, Ticket, User } from "../types";
@@ -40,6 +41,11 @@ function describeActivity(entry: Activity): string {
       return to ? `${label} → ${to}` : label;
     });
     return `changed ${parts.join(", ") || "the ticket"}`;
+  }
+  if (entry.action === "ticket.escalated") {
+    const target = entry.details.target === "response" ? "First reply" : "Resolution";
+    const level = entry.details.level === "breached" ? "missed — the team was told" : "due soon — a reminder was sent";
+    return `${target} ${level}`;
   }
   return ACTIVITY_TEXT[entry.action] ?? entry.action;
 }
@@ -338,6 +344,14 @@ export function TicketPage({ id }: { id: number }) {
   const teams = useLoad(() => api.get<Team[]>("/teams"), []);
   const systems = useLoad(() => api.get<SystemInfo[]>("/systems"), []);
   const users = useLoad(() => (can("ticket:assign") ? api.get<User[]>("/users") : Promise.resolve([])), []);
+
+  // Opening a ticket is reading its news.
+  useEffect(() => {
+    api
+      .post("/notifications/read", { ticket_id: id })
+      .then(refreshNotifications)
+      .catch(() => undefined);
+  }, [api, id]);
 
   if (ticket.error) return <ErrorState message={ticket.error} retry={ticket.reload} />;
   if (!ticket.data) return <Spinner />;

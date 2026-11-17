@@ -36,7 +36,7 @@ from zentral.schemas import (
 from zentral.security.crypto import get_cipher
 from zentral.security.rbac import Permission as P
 from zentral.security.redaction import redact
-from zentral.services import sla
+from zentral.services import notifications, sla
 from zentral.services.context import Ctx
 from zentral.services.errors import NotFound, PermissionDenied, ValidationFailed
 
@@ -360,6 +360,7 @@ ACTIVITY_ACTIONS = (
     "ticket.merged",
     "ticket.merge_received",
     "ticket.classification_skipped",
+    "ticket.escalated",
     "message.delivered",
     "message.delivery_failed",
 )
@@ -537,6 +538,8 @@ async def update_ticket(ctx: Ctx, ticket_id: int, patch: TicketUpdate) -> Ticket
                 raise ValidationFailed("unknown assignee")
         changed["assignee_id"] = [ticket.assignee_id or "", patch.assignee_id or ""]
         ticket.assignee_id = patch.assignee_id
+        if patch.assignee_id:
+            notifications.notify(ctx, {patch.assignee_id}, "assigned", ticket.id)
         if ticket.status == TicketStatus.NEW and patch.assignee_id:
             ticket.status = TicketStatus.OPEN
 

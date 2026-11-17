@@ -183,6 +183,30 @@ class MergeIn(In):
     into_ticket_id: int = Field(ge=1)
 
 
+# --- notifications ----------------------------------------------------------------
+
+
+class NotificationOut(Out):
+    id: uuid.UUID
+    kind: str
+    ticket_id: int
+    ticket_key: str
+    created_at: datetime
+    read_at: datetime | None
+
+
+class NotificationPage(Out):
+    items: list[NotificationOut]
+    unread: int
+
+
+class NotificationsRead(In):
+    """Which of one's notifications to mark read; neither field means all of them."""
+
+    ids: list[uuid.UUID] | None = Field(default=None, max_length=200)
+    ticket_id: int | None = Field(default=None, ge=1)
+
+
 # --- saved replies ----------------------------------------------------------------
 
 

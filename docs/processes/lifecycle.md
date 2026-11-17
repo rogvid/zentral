@@ -86,6 +86,28 @@ The rules behind it:
   a ticket to urgent can make it overdue immediately; that is deliberate.
 - **Internal tickets** (no requester) have no first-reply target.
 
+### When a target is in danger
+
+Every five minutes the worker looks at open tickets (pending tickets are
+waiting on the requester and are left alone):
+
+```mermaid
+flowchart LR
+    W["Every 5 minutes"] --> Q{"Target's last<br/>quarter started?"}
+    Q -- no --> N["Nothing"]
+    Q -- yes --> A{"Assigned?"}
+    A -- yes --> AS["Assignee: due soon"]
+    A -- no --> TM["Team: due soon"]
+    W --> M{"Target missed?"}
+    M -- yes --> E["Assignee <b>and</b> team:<br/>overdue (escalation)"]
+```
+
+Each warning is sent once per deadline, and recorded as `ticket.escalated`
+on the ticket's activity. When a deadline moves (new priority, new system, back
+from pending), warnings are armed again. `ZENTRAL_ESCALATION_WARN_FRACTION`
+sets when "due soon" starts (default `0.25`; `0` sends only the overdue
+escalation).
+
 Where people see it:
 
 | Where | What |

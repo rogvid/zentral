@@ -35,6 +35,8 @@ PATCH  /tickets/{id}
 GET    /tickets/{id}/messages
 POST   /tickets/{id}/messages
 POST   /tickets/{id}/merge          {"into_ticket_id": 12}
+GET    /notifications               your own; content-free
+POST   /notifications/read          {"ids": [...]} | {"ticket_id": 42} | {} for all
 ```
 
 List filters: `status` (repeatable), `priority`, `category`, `team_id`,

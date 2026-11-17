@@ -197,6 +197,8 @@ def main() -> None:
             http.post(f"/api/v1/hooks/{source['id']}", headers=hook, json=alert).raise_for_status()
 
         http.patch("/api/v1/tickets/2", headers=agent, json={"assignee_id": me["subject"]})
+        # Someone else hands the agent a ticket: it shows up in their notifications.
+        http.patch("/api/v1/tickets/5", headers=admin, json={"assignee_id": me["subject"]})
         http.post(
             "/api/v1/tickets/2/messages",
             headers=agent,

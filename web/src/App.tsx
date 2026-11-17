@@ -4,6 +4,7 @@ import { loadConfig, startSession, type Session } from "./auth";
 import { Wordmark } from "./brand";
 import { ConfirmProvider } from "./components/Confirm";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { NotificationBell } from "./components/Notifications";
 import { AppContext, type AppState } from "./context";
 import { ChartIcon, InboxIcon, LockIcon, LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, ShieldIcon, SunIcon } from "./icons";
 import { parseRoute, type Route } from "./lib";
@@ -128,6 +129,7 @@ export function App() {
               </a>
             ))}
           </nav>
+          {state.can("ticket:read") && <NotificationBell />}
           <div className="sidebar-foot">
             <div className="user">
               <Avatar name={state.me.display_name || state.me.email || "User"} />

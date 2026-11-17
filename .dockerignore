@@ -6,6 +6,7 @@
 !web/package.json
 !web/package-lock.json
 !web/index.html
+!web/portal.html
 !web/tsconfig.json
 !web/vite.config.ts
 !web/public/**

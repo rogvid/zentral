@@ -6,7 +6,7 @@
 # Pin the base images by digest in your own registry for reproducible builds.
 
 # --- 1. web client -----------------------------------------------------------
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -14,7 +14,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- 2. Python dependencies ----------------------------------------------------
-FROM python:3.13-slim AS build
+FROM python:3.15-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -24,7 +24,7 @@ COPY src/ src/
 RUN uv sync --frozen --no-dev --no-editable
 
 # --- 3. runtime ----------------------------------------------------------------
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 LABEL org.opencontainers.image.title="Zentral" \
       org.opencontainers.image.description="Privacy-first, AI-friendly service desk"
 

@@ -2,6 +2,7 @@
 
 | Secret | Rotate routinely | Rotate immediately when |
 |---|---|---|
+| [Key-encryption key (KMS / HSM)](#key-encryption-key) | Yearly, or per your KMS policy | Policy demands it; the KMS reports a problem |
 | [Encryption key](#encryption-key) | Yearly | It may have leaked; an operator with access leaves |
 | [Audit key](#audit-key) | Yearly | It may have leaked |
 | [Blind-index key](#blind-index-key) | No (see below) | It leaked *together with* a database copy |
@@ -11,10 +12,54 @@
 
 Take a backup first. Run `zentral doctor` before and after every rotation.
 
+Each key section has two procedures: **with a keyring** (production, see
+[Key custody](../operations/key-custody.md)) and **with plain-text keys**
+(`ZENTRAL_KEY_PROVIDER=env`). Run the `zentral keys` commands in an
+administrator shell with wrap permission and a writable copy of the keyring;
+each writes `keyring.json` in place (keeping a dated `.bak`) — deliver the new
+file to the deployment before restarting. After any change of the keys
+(everything except `rewrap`), refresh the
+[escrow copy](../operations/key-custody.md#escrow-and-disaster-recovery).
+
+## Key-encryption key
+
+Only the envelope changes; no data is re-encrypted and nothing is unreadable
+at any point.
+
+1. Create a new version of the key in the KMS (`az keyvault key rotate …`, or
+   `vault write -f transit/keys/zentral/rotate`). The old version stays
+   enabled, so running instances and the current keyring keep working.
+2. Re-wrap the keyring under the newest version:
+
+    ```bash
+    zentral keys rewrap
+    # wrote keyring.json (azure_keyvault, KEK https://desk-kv.vault.azure.net/keys/zentral-kek/9c1e…)
+    ```
+
+3. Deliver it, restart API and worker, `zentral doctor`.
+4. Re-wrap every `.bak` keyring you still keep for old backups
+   (`ZENTRAL_KEYRING_FILE=keyring.json.<timestamp>.bak zentral keys rewrap`),
+   and the [escrow copy](../operations/key-custody.md#escrow-and-disaster-recovery)
+   is unaffected. Then disable the old KMS key version (Vault: raise
+   `min_decryption_version`).
+
 ## Encryption key
 
-Zero downtime. The key setting is a list: the **first** key encrypts, **all**
-keys decrypt.
+Zero downtime. The **first** key encrypts, **all** keys decrypt.
+
+### With a keyring
+
+1. `zentral keys add-data-key` — adds a new first key.
+2. Deliver the keyring; restart API and worker. New data is written with the
+   new key; old data is still readable.
+3. `zentral keys rotate` — re-encrypts existing data.
+4. `zentral keys retire-data-keys` — checks that every stored value opens with
+   the new key (refuses otherwise), then drops the old one.
+5. Deliver, restart, `zentral doctor` (`✓ encryption: 1 key(s) configured`).
+6. Keep the `.bak` keyring from before step 4 until every database backup
+   taken before step 3 has expired — you need it to restore them.
+
+### With plain-text keys
 
 1. Generate a key and store it in your vault:
 
@@ -55,6 +100,10 @@ key, and follow the [security incident runbook](security-incident.md).
 
 New events are signed with the current key; retired keys stay valid for
 *verifying* older events.
+
+With a keyring, step 2 below is `zentral keys rotate-audit-key` (the current
+key moves to the retired list, a new one is generated) followed by delivering
+the keyring.
 
 1. Verify and archive the trail as it stands:
 

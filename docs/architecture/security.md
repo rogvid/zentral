@@ -61,8 +61,13 @@ Three keys, each with one job:
 | `ZENTRAL_BLIND_INDEX_KEY` | Lookup hashes | Lookups by e-mail and de-duplication stop matching old data | Holder can test guesses against a DB dump |
 | `ZENTRAL_AUDIT_HMAC_KEY` | Audit chain | Existing chain can no longer be verified | Holder with DB write access could forge a consistent chain |
 
-Store them in a secret manager, never in the image or repository, and back
-them up **separately from the database**.
+In production they come from a **keyring** whose data key is wrapped by a key
+that never leaves Azure Key Vault / Managed HSM or Vault Transit; they are
+unwrapped once at start-up and exist only in process memory — see
+[Key custody](../operations/key-custody.md). Plain-text keys in the
+environment are for development (production refuses them unless
+`ZENTRAL_ALLOW_ENV_KEYS=true`). Either way: never in the image or repository,
+and backed up **separately from the database**.
 
 ## Audit trail
 
@@ -128,5 +133,7 @@ an explicit allow-list, because loading a plug-in executes its code.
 
 In production the process refuses to start if: development sign-in is enabled;
 the database is SQLite; the public URL is not HTTPS; CORS allows `*`; any of
-the three keys is missing or short; PII masking is disabled for a cloud AI
+the three keys is missing or short; keys are in plain text in the environment
+without `ZENTRAL_ALLOW_ENV_KEYS`, or set there next to a key provider; the
+`local_file` key provider is selected; PII masking is disabled for a cloud AI
 provider; or the test-only `claude_cli` provider is selected.

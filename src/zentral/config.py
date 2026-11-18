@@ -16,7 +16,7 @@ from datetime import date
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
-from pydantic import BeforeValidator, Field, SecretStr
+from pydantic import BeforeValidator, Field, PrivateAttr, SecretStr
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from zentral.services.calendar import CalendarError, WorkCalendar
@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ZENTRAL_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
+
+    # Set on the copy returned by ``zentral.security.keys.materialise`` once the
+    # keys have been unwrapped from the keyring.
+    _keys_from_keyring: bool = PrivateAttr(default=False)
 
     env: Literal["development", "test", "production"] = "development"
     database_url: str = "sqlite+aiosqlite:///./zentral-dev.db"
@@ -182,6 +186,40 @@ class Settings(BaseSettings):
     audit_hmac_key: SecretStr = SecretStr("")
     # Retired audit keys, still accepted when verifying older events.
     audit_hmac_previous_keys: SecretList = Field(default_factory=list)
+
+    # --- Key custody ----------------------------------------------------------
+    # Where the keys above come from. "env": the four settings above, in plain
+    # text (development; production only with ZENTRAL_ALLOW_ENV_KEYS). Any other
+    # value names a key provider that unwraps an envelope-encrypted keyring at
+    # start-up: azure_keyvault, vault_transit, local_file (not for production),
+    # or a plug-in from the "zentral.key_providers" entry-point group.
+    key_provider: str = "env"
+    # The wrapped keyring: a file (preferred) or the document itself. Neither
+    # is secret on its own: it is useless without access to the provider's key.
+    keyring_file: str = ""
+    keyring: str = ""
+    # Production refuses plain-text environment keys unless this is set.
+    allow_env_keys: bool = False
+    # Azure Key Vault / Managed HSM: https://<vault>.vault.azure.net/keys/<name>
+    # (or …managedhsm.azure.net/keys/<name>). Wrapping uses the latest version;
+    # unwrapping uses the version recorded in the keyring.
+    azure_keyvault_key_id: str = ""
+    azure_keyvault_algorithm: str = "RSA-OAEP-256"
+    # Client ID of a user-assigned managed identity (empty: system-assigned).
+    azure_managed_identity_client_id: str = ""
+    # HashiCorp Vault / OpenBao Transit.
+    vault_addr: str = ""
+    vault_namespace: str = ""
+    vault_transit_mount: str = "transit"
+    vault_transit_key: str = ""
+    # Authentication: a token file kept fresh by Vault Agent, or Kubernetes auth.
+    vault_token_file: str = ""
+    vault_kubernetes_role: str = ""
+    vault_kubernetes_mount: str = "kubernetes"
+    vault_kubernetes_token_file: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"  # noqa: S105 # nosec B105
+    # local_file provider: a 32-byte AES key (base64) in a file. Development,
+    # tests and offline escrow copies only.
+    local_kek_file: str = ""
     # Tickets resolved/closed for longer than this are scrubbed of personal data.
     retention_days: int = Field(default=365, ge=1)
 
@@ -279,6 +317,17 @@ class Settings(BaseSettings):
             problems.append("ZENTRAL_BLIND_INDEX_KEY must be at least 32 characters")
         if len(self.audit_hmac_key.get_secret_value()) < 32:
             problems.append("ZENTRAL_AUDIT_HMAC_KEY must be at least 32 characters")
+        if self.key_provider == "env":
+            if self.is_production and not self.allow_env_keys:
+                problems.append(
+                    "production refuses plain-text keys in the environment: configure a key "
+                    "provider (ZENTRAL_KEY_PROVIDER, ZENTRAL_KEYRING_FILE) or, knowingly, set "
+                    "ZENTRAL_ALLOW_ENV_KEYS=true"
+                )
+        elif not self._keys_from_keyring:
+            problems.append(
+                f"ZENTRAL_KEY_PROVIDER={self.key_provider}: the keyring has not been unwrapped"
+            )
         if self.auth_mode == "entra" and not (self.entra_tenant_id and self.entra_api_client_id):
             problems.append("Entra auth requires ZENTRAL_ENTRA_TENANT_ID and _API_CLIENT_ID")
         if self.auth_mode == "oidc":

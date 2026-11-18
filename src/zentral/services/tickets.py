@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, false, func, or_, select, true, update
+from sqlalchemy.exc import IntegrityError
 
 from zentral.db.models import (
     Attachment,
@@ -251,16 +252,29 @@ async def list_tickets(ctx: Ctx, f: TicketFilter) -> TicketPage:
     if f.q:
         needle = f.q.casefold().strip()
         pii = ctx.can(P.TICKET_READ_PII)
-        window = (await ctx.session.scalars(base.limit(SEARCH_WINDOW))).unique().all()
+        # Scan only what is matched on; load full tickets for the page alone.
+        scan = (
+            select(Ticket.id, Ticket.subject)
+            .where(and_(*where))
+            .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+            .limit(SEARCH_WINDOW)
+        )
         matches = [
-            t
-            for t in window
-            if needle in (t.subject if pii else redact(t.subject)).casefold()
-            or needle == ticket_key(ctx, t.id).casefold()
-            or needle == str(t.id)
+            tid
+            for tid, subject in (await ctx.session.execute(scan)).all()
+            if needle in (subject if pii else redact(subject)).casefold()
+            or needle == ticket_key(ctx, tid).casefold()
+            or needle == str(tid)
         ]
         total = len(matches)
-        rows = matches[offset : offset + limit]
+        page = matches[offset : offset + limit]
+        loaded = {
+            t.id: t
+            for t in (await ctx.session.scalars(select(Ticket).where(Ticket.id.in_(page))))
+            .unique()
+            .all()
+        }
+        rows = [loaded[tid] for tid in page if tid in loaded]
     else:
         total = (
             await ctx.session.scalar(select(func.count()).select_from(Ticket).where(and_(*where)))
@@ -456,11 +470,19 @@ async def get_or_create_contact(
     ctx: Ctx, kind: str, identifier: str, *, email: str | None, name: str | None
 ) -> Contact:
     identity = get_cipher().blind_index(kind, identifier)
-    contact = await ctx.session.scalar(select(Contact).where(Contact.identity_hash == identity))
+    query = select(Contact).where(Contact.identity_hash == identity)
+    contact = await ctx.session.scalar(query)
     if contact is None:
         contact = Contact(identity_hash=identity, email=email, display_name=name or None)
-        ctx.session.add(contact)
-        await ctx.session.flush()
+        try:
+            async with ctx.session.begin_nested():
+                ctx.session.add(contact)
+        except IntegrityError:
+            # A concurrent request created the same person first: use theirs.
+            contact = await ctx.session.scalar(query)
+            if contact is None:
+                raise
+            return contact
         ctx.audit("contact.created", "contact", contact.id)
     elif name and not contact.display_name:
         contact.display_name = name

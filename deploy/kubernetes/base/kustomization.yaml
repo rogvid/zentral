@@ -2,6 +2,7 @@
 #
 #   kubectl create namespace zentral
 #   kubectl -n zentral create secret generic zentral-secrets --from-env-file=secrets.env
+#   kubectl -n zentral create configmap zentral-keyring --from-file=keyring.json
 #   kubectl apply -k deploy/kubernetes/base      # or your own overlay
 #
 # See docs/operations/deploy-kubernetes.md. Create an overlay to set your image,
@@ -11,6 +12,7 @@ kind: Kustomization
 namespace: zentral
 resources:
   - configmap.yaml
+  - serviceaccount.yaml
   - migrate-job.yaml
   - api.yaml
   - worker.yaml
@@ -18,8 +20,8 @@ resources:
   - networkpolicy.yaml
 images:
   - name: zentral
-    newName: ghcr.io/your-org/zentral
-    newTag: "0.1.0"
+    newName: ghcr.io/rogvid/zentral
+    newTag: "1.0.0"
 labels:
   - pairs:
       app.kubernetes.io/part-of: zentral

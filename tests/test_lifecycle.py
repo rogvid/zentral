@@ -233,6 +233,30 @@ async def test_insights_report_volume_sources_and_targets(client, auth, worker):
     assert b["id"]
 
 
+async def test_insights_with_a_paused_ticket_on_a_system(client, auth):
+    """A paused ticket's resolution view reads its system's own targets.
+
+    Insights skips loading ticket content for speed; this path must still work
+    (it failed in the browser walkthrough when the system was not loaded)."""
+    system = (
+        await client.post(
+            "/api/v1/systems",
+            headers=auth("admin"),
+            json={"key": "vpn", "name": "VPN", "sla_resolve_hours": {"normal": 8}},
+        )
+    ).json()
+    ticket = await make_ticket(
+        client, auth, subject="VPN drops", system_id=system["id"], requester_email="a@example.com"
+    )
+    r = await client.patch(
+        f"/api/v1/tickets/{ticket['id']}", headers=auth("admin"), json={"status": "pending"}
+    )
+    assert r.status_code == 200
+    r = await client.get("/api/v1/tickets/insights", headers=auth("admin"))
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 1
+
+
 async def test_insights_respect_scope_and_permissions(client, auth):
     team = await make_team(client, auth, "Support", ["agent"])
     other = await make_team(client, auth, "HR")

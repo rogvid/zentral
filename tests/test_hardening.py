@@ -132,6 +132,9 @@ def prod(**overrides):
         "entra_api_client_id": "c",
         "database_url": "postgresql+asyncpg://u@db/zentral",
         "public_base_url": "https://desk.corp.example",
+        # Plain-text keys keep these tests about the other settings; key custody
+        # has its own tests in test_key_custody.py.
+        "allow_env_keys": True,
     }
     return make_settings(**{**base, **overrides})
 
@@ -165,6 +168,7 @@ def test_valid_production_config_passes():
         {"entra_tenant_id": ""},
         {"ai_provider": "claude_cli"},
         {"ai_provider": "anthropic", "ai_redact_pii": False},
+        {"allow_env_keys": False},
     ],
 )
 def test_unsafe_production_config_is_refused(overrides):

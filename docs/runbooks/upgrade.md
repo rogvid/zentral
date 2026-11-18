@@ -16,6 +16,13 @@ replicas; a few seconds on a single-host Compose installation.
 
 3. Confirm the installation is healthy *before* changing it: `zentral doctor`.
 
+!!! warning "Upgrading to the release with key custody"
+    From this release, production refuses plain-text keys in the environment.
+    Before upgrading, either [move to a keyring](../operations/key-custody.md#move-an-existing-installation)
+    (recommended — do it on the *new* version's CLI, then deploy), or set
+    `ZENTRAL_ALLOW_ENV_KEYS=true` to keep the old behaviour knowingly
+    (`zentral doctor` will warn).
+
 ## Upgrade
 
 === "Docker Compose"

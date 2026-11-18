@@ -5,7 +5,7 @@
 | What | Where it is | Notes |
 |---|---|---|
 | **The PostgreSQL database** | Your database server / the `db-data` volume | Everything: tickets, audit trail, configuration, job queue |
-| **The three keys** | Your secret manager | `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` (and any retired keys) |
+| **The keys** | The keyring file (and its `.bak` versions) plus the KMS key; the offline escrow keyring | See [Key custody](../operations/key-custody.md#escrow-and-disaster-recovery). With plain-text keys: `ZENTRAL_ENCRYPTION_KEYS`, `ZENTRAL_BLIND_INDEX_KEY`, `ZENTRAL_AUDIT_HMAC_KEY` (and any retired keys) in your secret manager |
 | Deployment configuration | Your Git repository / `.env` | Reproducible, but saves time |
 
 !!! danger "Keys and database go in different places"
@@ -69,8 +69,12 @@ environment.
         pg_restore -d zentral_restored --no-owner zentral-20261116T020000Z.dump
         ```
 
-3. **Provide the keys that were in use when the backup was taken.** If keys
-   were rotated since, put the old encryption key in the list as well.
+3. **Provide the keys that were in use when the backup was taken.** With a
+   keyring: if the data or audit key was changed since, point
+   `ZENTRAL_KEYRING_FILE` at the `keyring.json.<timestamp>.bak` that was
+   current at backup time (then run `zentral keys rotate` to move the data
+   onto today's key). With plain-text keys: put the old encryption key in the
+   list as well.
 
 4. **Check before starting:**
 
@@ -99,21 +103,52 @@ environment.
 
 ## Test the restore — monthly
 
-A backup you have not restored is a hope. Once a month, restore the latest
-backup into a scratch database and run:
+A backup you have not restored is a hope. Once a month, run the drill from an
+administrator shell with the installation's settings (on staging, or on
+production — it only reads from the production database):
 
 ```bash
-ZENTRAL_DATABASE_URL=postgresql+asyncpg://…/zentral_restore_test zentral doctor
+python scripts/restore_drill.py "postgresql://zentral@db.example.internal/zentral?sslmode=require" \
+  --escrow-keyring /media/escrow/keyring-escrow.json \
+  --escrow-kek /media/escrow/zentral-escrow.kek
 ```
 
-`doctor` proves the three things that matter: the schema is intact, the key
-decrypts the data, and the audit chain verifies. Record the date and result.
-Drop the scratch database afterwards — it contains personal data.
+It backs up, restores into a scratch database on the same server, and proves
+the three things that matter: the schema is intact and the keys decrypt the
+data (`zentral doctor`), the audit chain verifies (`zentral audit verify`),
+and the offline escrow copy opens to the same keys
+(`zentral keys verify-escrow`). Then it drops the scratch database and deletes
+the dump — both contain personal data. Paste the report into your drill log:
+
+```
+| Step | Seconds | Result |
+|---|---:|---|
+| backup (pg_dump) | 9.5 | ok: 182.2 MiB |
+| create scratch database | 0.1 | ok |
+| restore (pg_restore) | 6.5 | ok |
+| zentral doctor (schema, decryption) | 2.9 | ok: 7 ok, 2 warning(s), 0 failure(s) |
+| zentral audit verify | 2.7 | ok: OK: 68633 events verified |
+| escrow keyring matches | 0.5 | ok: ✓ escrow keyring (sealed 2026-11-17T22:38:17+00:00) matches the keys in use |
+| drop scratch database | 0.2 | ok |
+| **total** | **22.3** | passed |
+```
+
+*Measured on the load-test database: 13,200 tickets, 19,900 messages, 830
+attachments, 68,600 audit events — 296 MiB in PostgreSQL 16, 182 MiB as a dump
+— on 4 vCPUs with local disk. Backup and restore time grow roughly linearly
+with size, and attachments are most of it. Plan your recovery-time objective
+from your own drill, on your own storage.*
+
+If a step fails, the restore would have failed too: fix it before you need it
+(wrong or stale keys → [Key custody](../operations/key-custody.md); chain
+broken → [Audit verification](audit-verification.md)).
 
 ## Disaster recovery in a new environment
 
 1. Deploy Zentral per the [first-deployment runbook](first-deployment.md), steps
-   1–3, using the **original keys** and identity settings.
+   1–3, using the **original keyring** (and access to its KMS key — or the
+   [escrow copy](../operations/key-custody.md#escrow-and-disaster-recovery)
+   if the KMS is gone) and identity settings.
 2. Restore the database as above.
 3. If the public hostname changed: update `ZENTRAL_PUBLIC_BASE_URL`,
    `ZENTRAL_ALLOWED_HOSTS`, the redirect URI in the identity provider, and the

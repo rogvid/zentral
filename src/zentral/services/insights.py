@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
+from sqlalchemy.orm import defer, raiseload
 
 from zentral.db.models import Rating, System, Ticket, TicketStatus, utcnow
 from zentral.schemas import CountOut, DayOut, InsightsOut, TargetOut
@@ -21,6 +22,17 @@ from zentral.services.context import Ctx
 from zentral.services.tickets import ACTIVE_STATUSES, overdue_clause, visible_clause
 
 MAX_ROWS = 50_000
+# Insights counts; it never needs content. Loading it would decrypt the
+# subject, summary and requester of every ticket in the period — measured as
+# the largest CPU cost under load. ``raiseload`` makes any later use fail loudly.
+# Team and system stay loaded: they hold no encrypted data, and service-level
+# views read the system's own targets.
+METADATA_ONLY = (
+    defer(Ticket.subject, raiseload=True),
+    defer(Ticket.ai_summary, raiseload=True),
+    defer(Ticket.thread_ref, raiseload=True),
+    raiseload(Ticket.requester),
+)
 
 
 def _target(states: list[str]) -> TargetOut:
@@ -50,6 +62,7 @@ async def insights(ctx: Ctx, days: int = 30) -> InsightsOut:
             select(Ticket, System.name)
             .outerjoin(System, System.id == Ticket.system_id)
             .where(scope, Ticket.created_at >= since)
+            .options(*METADATA_ONLY)
             .limit(MAX_ROWS)
         )
     ).all()

@@ -187,6 +187,22 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_BLIND_INDEX_KEY` | *(secret, none)* | SecretStr |
 | `ZENTRAL_AUDIT_HMAC_KEY` | *(secret, none)* | SecretStr |
 | `ZENTRAL_AUDIT_HMAC_PREVIOUS_KEYS` | *(secret, none)* | list[SecretStr] |
+| `ZENTRAL_KEY_PROVIDER` | `env` | str |
+| `ZENTRAL_KEYRING_FILE` | *(empty)* | str |
+| `ZENTRAL_KEYRING` | *(empty)* | str |
+| `ZENTRAL_ALLOW_ENV_KEYS` | `False` | bool |
+| `ZENTRAL_AZURE_KEYVAULT_KEY_ID` | *(empty)* | str |
+| `ZENTRAL_AZURE_KEYVAULT_ALGORITHM` | `RSA-OAEP-256` | str |
+| `ZENTRAL_AZURE_MANAGED_IDENTITY_CLIENT_ID` | *(empty)* | str |
+| `ZENTRAL_VAULT_ADDR` | *(empty)* | str |
+| `ZENTRAL_VAULT_NAMESPACE` | *(empty)* | str |
+| `ZENTRAL_VAULT_TRANSIT_MOUNT` | `transit` | str |
+| `ZENTRAL_VAULT_TRANSIT_KEY` | *(empty)* | str |
+| `ZENTRAL_VAULT_TOKEN_FILE` | *(empty)* | str |
+| `ZENTRAL_VAULT_KUBERNETES_ROLE` | *(empty)* | str |
+| `ZENTRAL_VAULT_KUBERNETES_MOUNT` | `kubernetes` | str |
+| `ZENTRAL_VAULT_KUBERNETES_TOKEN_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/token` | str |
+| `ZENTRAL_LOCAL_KEK_FILE` | *(empty)* | str |
 | `ZENTRAL_RETENTION_DAYS` | `365` | int |
 | `ZENTRAL_AI_PROVIDER` | `rules` | str |
 | `ZENTRAL_AI_MODEL` | *(empty)* | str |

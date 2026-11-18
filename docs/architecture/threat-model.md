@@ -77,7 +77,8 @@ beyond their role, any AI model's output.
 |---|---|---|
 | Database dump / backup stolen | Field encryption: content unreadable without keys | Metadata (status, timestamps, team/system links, staff names) is readable |
 | Database write access | Audit triggers + keyed chain make tampering detectable | Data destruction: rely on backups |
-| Application host compromised | Non-root, read-only filesystem, no capabilities, network policies | **Keys are in process memory: a full compromise of the app host exposes data.** Reduce with an HSM/KMS-backed design (roadmap) |
+| Configuration, environment or secret store leaked (manifests, `.env`, CI variables, orchestrator secrets, configuration backups) | With a [key provider](../operations/key-custody.md), no key is in any of them: the keyring is useless without the KMS key, and production refuses plain-text keys unless explicitly allowed | With `ZENTRAL_ALLOW_ENV_KEYS=true`: the leak exposes the keys (doctor warns) |
+| Application host compromised | Non-root, read-only filesystem, no capabilities, network policies. Keys come from an envelope-encrypted keyring unwrapped by Key Vault / Managed HSM / Vault Transit; the app's identity can only unwrap; every unwrap is logged by the KMS and access can be revoked at once | **An attacker controlling the running process can read keys from its memory**, as the process must hold them to encrypt and decrypt (the audit HMAC is in-process too, for latency). Revoking unwrap stops new processes, not a live one: rotate the data and audit keys afterwards |
 | Malicious dependency or plug-in | Lock files with hashes, audits, plug-in allow-list | Supply-chain attacks on a pinned dependency |
 | AI provider retains data | On-prem provider keeps data inside your network; cloud providers receive masked text only and are refused unmasked in production | Pattern-based masking is best effort — names in free text can pass |
 
@@ -88,7 +89,8 @@ Stated plainly so nobody assumes otherwise:
 - **Attachment scanning** is as good as ClamAV's signatures; a novel threat in
   a PDF can pass. PDFs are offered as downloads only, never rendered by Zentral.
 - **No built-in WAF, DDoS protection or intrusion detection.**
-- **Key custody** is environment-variable based; there is no HSM/KMS envelope
-  encryption yet.
+- **Keys in process memory.** Envelope encryption keeps keys out of
+  configuration and storage, but not out of the running process; per-field
+  HSM operations are not used.
 - **Masking is pattern-based**, not anonymisation.
 - **No independent penetration test or certification** has been performed.

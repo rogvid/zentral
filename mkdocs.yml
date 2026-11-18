@@ -115,6 +115,7 @@ nav:
       - First deployment: runbooks/first-deployment.md
       - Upgrade: runbooks/upgrade.md
       - Release, staging and go-live: runbooks/release.md
+      - "1.0.0 handoff: PR #22 to staging": releases/1.0.0-handoff.md
       - Backup and restore: runbooks/backup-restore.md
       - Rotate keys and secrets: runbooks/key-rotation.md
       - Verify the audit trail: runbooks/audit-verification.md
@@ -133,4 +134,5 @@ nav:
   - Development:
       - Local setup: development/setup.md
       - Testing: development/testing.md
+      - Dependencies and advisories: development/dependencies.md
       - Contributing: development/contributing.md

@@ -102,6 +102,7 @@ nav:
       - Custom authentication: extending/authentication.md
   - Operations:
       - Deployment overview: operations/deployment.md
+      - Trial on a VPS: operations/deploy-trial.md
       - Deploy with Docker Compose: operations/deploy-compose.md
       - Deploy on Kubernetes: operations/deploy-kubernetes.md
       - Identity — Microsoft Entra ID: operations/identity-entra.md

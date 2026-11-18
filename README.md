@@ -43,7 +43,7 @@ uv sync --group docs && uv run mkdocs serve
 | How it works | [Overview](docs/processes/index.md) · [Intake](docs/processes/intake.md) · [Triage](docs/processes/triage.md) · [Lifecycle](docs/processes/lifecycle.md) · [Access](docs/processes/access.md) · [Personal data](docs/processes/data.md) · [Oversight](docs/processes/oversight.md) · [User stories](docs/processes/user-stories.md) |
 | Architecture | [Overview](docs/architecture/overview.md) · [Security](docs/architecture/security.md) · [Threat model](docs/architecture/threat-model.md) · [AI pipeline](docs/architecture/ai.md) |
 | Use | [Agents](docs/guides/agents.md) · [Administration](docs/guides/administration.md) · [Systems](docs/guides/systems.md) · [MCP](docs/guides/mcp.md) · [API](docs/guides/api.md) |
-| Operate | [Deployment](docs/operations/deployment.md) · [Compose](docs/operations/deploy-compose.md) · [Kubernetes](docs/operations/deploy-kubernetes.md) · [Entra ID](docs/operations/identity-entra.md) · [Other OIDC](docs/operations/identity-oidc.md) · [Runbooks](docs/runbooks/index.md) |
+| Operate | [Deployment](docs/operations/deployment.md) · [Trial on a VPS](docs/operations/deploy-trial.md) · [Compose](docs/operations/deploy-compose.md) · [Kubernetes](docs/operations/deploy-kubernetes.md) · [Entra ID](docs/operations/identity-entra.md) · [Other OIDC](docs/operations/identity-oidc.md) · [Runbooks](docs/runbooks/index.md) |
 | Comply | [GDPR](docs/compliance/gdpr.md) · [Roles and permissions](docs/compliance/rbac.md) · [Logging and audit](docs/compliance/logging.md) |
 | Extend | [Connectors](docs/extending/connectors.md) · [AI providers](docs/extending/ai-providers.md) · [Authentication](docs/extending/authentication.md) |
 

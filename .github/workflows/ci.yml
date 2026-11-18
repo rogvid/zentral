@@ -131,3 +131,9 @@ jobs:
         run: |
           cp .env.example .env && sed -i 's/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=ci/' .env
           docker compose config --quiet
+      - name: Trial compose file is valid
+        working-directory: deploy/trial
+        run: |
+          printf 'ZENTRAL_HOSTNAME=ci.example\nPOSTGRES_PASSWORD=ci\nTRIAL_USER=trial\nTRIAL_PASSWORD_HASH=x\n' > .env
+          docker compose config --quiet
+          bash -n setup.sh

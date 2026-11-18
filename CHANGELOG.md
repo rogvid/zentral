@@ -5,6 +5,15 @@ All notable changes to Zentral. The format follows
 [Semantic Versioning](https://semver.org/). The release workflow publishes the
 section for a version as its release notes.
 
+## [Unreleased]
+
+### Added
+
+- **Trial on a VPS** (`deploy/trial`): one script sets up Zentral on a single
+  server with automatic HTTPS (no DNS needed, via sslip.io), the persona
+  sign-in behind a shared password, and plain-text keys — for evaluation
+  without an identity provider or KMS. See *Trial on a VPS* in the documentation.
+
 ## [1.0.0]
 
 The release intended for production. Read **Upgrading** first.

@@ -28,14 +28,16 @@ cluster.
 
 ## Choose a path
 
-| | Docker Compose | Kubernetes |
-|---|---|---|
-| For | One host; small and medium desks; evaluation | You already run Kubernetes |
-| TLS | Automatic (Caddy) | Your ingress + cert-manager |
-| Database | Included container (or external) | External (managed) |
-| Guide | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
+| | Trial | Docker Compose | Kubernetes |
+|---|---|---|---|
+| For | Trying Zentral on one VPS with made-up data | One host; small and medium desks | You already run Kubernetes |
+| Sign-in | Persona picker behind a shared password | Entra ID or OIDC | Entra ID or OIDC |
+| Keys | Plain text in `.env` | KMS-wrapped keyring | KMS-wrapped keyring |
+| TLS | Automatic (Caddy; no DNS needed) | Automatic (Caddy) | Your ingress + cert-manager |
+| Database | Included container | Included container (or external) | External (managed) |
+| Guide | [Trial on a VPS](deploy-trial.md) | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
 
-Either way, follow the **[first-deployment runbook](../runbooks/first-deployment.md)**
+For a real installation, follow the **[first-deployment runbook](../runbooks/first-deployment.md)**
 — it is the same ten steps with the platform-specific commands linked.
 
 ## Sizing

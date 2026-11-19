@@ -2,8 +2,8 @@
 
 This gets you a local instance with sample data in about five minutes. It uses
 SQLite and the built-in **development sign-in** — fine for a laptop, never for
-real data. To try it on a server instead, see [Trial on a VPS](operations/deploy-trial.md);
-for a real installation go to [Deployment](operations/deployment.md).
+real data. For a server — including a single VPS with no identity provider of
+your own — go to [Deployment](operations/deployment.md).
 
 ## Prerequisites
 

@@ -1,0 +1,85 @@
+{
+  "realm": "zentral",
+  "displayName": "Zentral",
+  "enabled": true,
+  "sslRequired": "external",
+
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "editUsernameAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+
+  "passwordPolicy": "length(12) and notUsername and notEmail and passwordHistory(3)",
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 10,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
+
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 36000,
+
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
+
+  "roles": {
+    "realm": [
+      { "name": "Zentral.Admin", "description": "Sets up teams, systems, channels and rules" },
+      { "name": "Zentral.Agent", "description": "Works tickets and replies to requesters" },
+      { "name": "Zentral.Viewer", "description": "Reads tickets, personal data masked" },
+      { "name": "Zentral.Auditor", "description": "Reads the audit trail" },
+      { "name": "Zentral.PrivacyOfficer", "description": "Handles access and erasure requests" },
+      { "name": "Zentral.Automation", "description": "AI agents: triage with personal data masked" }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "zentral-web",
+      "name": "Zentral",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "https://${ZENTRAL_HOSTNAME}",
+      "baseUrl": "/",
+      "redirectUris": ["https://${ZENTRAL_HOSTNAME}/"],
+      "webOrigins": ["https://${ZENTRAL_HOSTNAME}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${ZENTRAL_HOSTNAME}/"
+      },
+      "protocolMappers": [
+        {
+          "name": "zentral-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "zentral-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

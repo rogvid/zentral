@@ -18,3 +18,5 @@ node_modules/
 web/dist/
 *.log
 .DS_Store
+deploy/compose/backups/
+deploy/compose/keys/

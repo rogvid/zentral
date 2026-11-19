@@ -1,0 +1,28 @@
+# The bundled identity provider (compose.idp.yaml). Only the Zentral realm's
+# public endpoints are published: sign-in, tokens, keys, logout and the
+# account page where people change their password and authenticator app.
+# The admin console and the master realm are not reachable from outside.
+{$ZENTRAL_IDP_HOSTNAME} {
+	encode zstd gzip
+
+	@realm path /realms/zentral/* /resources/*
+	handle @realm {
+		reverse_proxy keycloak:8080 {
+			# Never let a client spoof its address (Keycloak's brute-force
+			# protection and event log use it).
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 404
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	log {
+		output stdout
+		format json
+	}
+}

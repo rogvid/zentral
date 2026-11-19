@@ -28,16 +28,19 @@ cluster.
 
 ## Choose a path
 
-| | Trial | Docker Compose | Kubernetes |
+| | Single VPS | Docker Compose | Kubernetes |
 |---|---|---|---|
-| For | Trying Zentral on one VPS with made-up data | One host; small and medium desks | You already run Kubernetes |
-| Sign-in | Persona picker behind a shared password | Entra ID or OIDC | Entra ID or OIDC |
-| Keys | Plain text in `.env` | KMS-wrapped keyring | KMS-wrapped keyring |
-| TLS | Automatic (Caddy; no DNS needed) | Automatic (Caddy) | Your ingress + cert-manager |
-| Database | Included container | Included container (or external) | External (managed) |
-| Guide | [Trial on a VPS](deploy-trial.md) | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
+| For | One server, no identity provider or KMS of your own | One host with your Entra ID / OIDC and KMS | You already run Kubernetes |
+| Sign-in | Bundled Keycloak (password + authenticator app) | Entra ID or OIDC | Entra ID or OIDC |
+| Keys | Plain text in `.env`, knowingly allowed | KMS-wrapped keyring | KMS-wrapped keyring |
+| TLS | Automatic (Caddy; works without DNS) | Automatic (Caddy) | Your ingress + cert-manager |
+| Database | Included container, daily dumps | Included container (or external) | External (managed) |
+| Set up with | `./zentralctl setup` | `.env` + `docker compose up` | `kubectl apply -k` |
+| Guide | [Deploy on a single VPS](deploy-vps.md) | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
 
-For a real installation, follow the **[first-deployment runbook](../runbooks/first-deployment.md)**
+The single-VPS setup is the Compose deployment plus a bundled identity
+provider and backups, so you can move from one to the other by configuration.
+Either way, follow the **[first-deployment runbook](../runbooks/first-deployment.md)**
 — it is the same ten steps with the platform-specific commands linked.
 
 ## Sizing

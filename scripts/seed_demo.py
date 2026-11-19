@@ -8,14 +8,11 @@ server runs with ZENTRAL_AUTH_MODE=dev.
 
 from __future__ import annotations
 
-import os
 import sys
 
 import httpx
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
-# Where a person opens it (differs from BASE when seeding over an internal network).
-OPEN = os.environ.get("ZENTRAL_PUBLIC_BASE_URL", BASE)
 
 ALERTS = [
     {
@@ -219,7 +216,7 @@ def main() -> None:
             },
         )
         print(
-            f"Seeded {len(ALERTS)} tickets, {len(systems)} systems, 3 teams, 2 rules. Open {OPEN}"
+            f"Seeded {len(ALERTS)} tickets, {len(systems)} systems, 3 teams, 2 rules. Open {BASE}"
         )
 
 

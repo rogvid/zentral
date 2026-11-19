@@ -1,5 +1,9 @@
 # TLS termination with automatic certificates (Let's Encrypt / ZeroSSL).
 # For an internal CA, add:  tls /path/cert.pem /path/key.pem
+
+# Further sites, e.g. the bundled identity provider (compose.idp.yaml).
+import sites/*.caddy
+
 {$ZENTRAL_HOSTNAME} {
 	encode zstd gzip
 	reverse_proxy api:8000 {

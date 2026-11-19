@@ -1,0 +1,597 @@
+#!/usr/bin/env bash
+# zentralctl — run Zentral on a single server with Docker Compose.
+#
+# Setup and health
+#   setup [--hostname H] [--idp-hostname H] [--admin-email E] [--admin-name "N"]
+#                          First installation: configuration, keys, start, first admin
+#   status                 Containers, newest backups, disk
+#   doctor                 Pre-flight check (exit 1 on failure)
+#   verify                 doctor + full audit-trail verification
+#   logs [service…]        Follow logs (default: api worker keycloak caddy)
+#
+# People and AI agents (bundled sign-in)
+#   user add EMAIL "FULL NAME" ROLE…     Create; prints a one-time password
+#   user list                            Everyone and their roles
+#   user roles EMAIL ROLE…               Replace someone's roles
+#   user disable|enable EMAIL            Disabling also ends their sessions
+#   user reset EMAIL                     New one-time password, new authenticator app
+#   agent add NAME [ROLE]                Client-credentials identity (default automation)
+#   agent list | agent remove NAME | agent rotate NAME
+#   Roles: admin agent viewer auditor privacy automation
+#
+# Data
+#   backup                 Dump the databases now (also runs daily by itself)
+#   restore FILE           Restore a dump from ./backups (asks first)
+#   drill                  Restore the newest dump into a scratch database and verify it
+#   keys                   Show the keys to store in your password manager
+#
+# Change
+#   upgrade                Back up, pull the code, rebuild, restart, check
+#
+# docs/operations/deploy-vps.md
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")"
+
+ROLES="admin agent viewer auditor privacy automation"
+KCADM=/opt/keycloak/bin/kcadm.sh
+KCCFG=/tmp/kcadm.config
+
+# --- helpers ------------------------------------------------------------------------
+say() { printf '%s\n' "$*"; }
+step() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
+warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
+die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
+dc() { docker compose "$@"; }
+need_env() { [[ -f .env ]] || die "No .env here. Run: ./zentralctl setup"; }
+env_value() { sed -n "s/^$1=//p" .env | tail -n 1 | sed "s/^'\(.*\)'$/\1/"; }
+uses_idp() { [[ "$(env_value COMPOSE_FILE)" == *compose.idp.yaml* ]]; }
+need_idp() { uses_idp || die "This installation does not use the bundled sign-in; manage people in your identity provider."; }
+rand() { openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
+
+confirm() {
+  [[ "${ASSUME_YES:-}" == 1 ]] && return 0
+  local answer
+  read -r -p "$1 [y/N] " answer
+  [[ "$answer" == [yY]* ]]
+}
+
+role_name() {
+  case "$1" in
+    admin) echo Zentral.Admin ;;
+    agent) echo Zentral.Agent ;;
+    viewer) echo Zentral.Viewer ;;
+    auditor) echo Zentral.Auditor ;;
+    privacy | privacy-officer | privacyofficer) echo Zentral.PrivacyOfficer ;;
+    automation) echo Zentral.Automation ;;
+    Zentral.*) [[ " $ROLES " == *" $(short_role "$1") "* ]] && echo "$1" || die "unknown role: $1" ;;
+    *) die "unknown role: $1 (use: $ROLES)" ;;
+  esac
+}
+short_role() {
+  case "$1" in
+    Zentral.PrivacyOfficer) echo privacy ;;
+    *) echo "${1#Zentral.}" | tr '[:upper:]' '[:lower:]' ;;
+  esac
+}
+
+wait_healthy() {  # service, seconds
+  local id status
+  for _ in $(seq "$(($2 / 3))"); do
+    id=$(dc ps -q "$1" 2>/dev/null || true)
+    status=$([[ -n "$id" ]] && docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || true)
+    [[ "$status" == healthy ]] && return 0
+    sleep 3
+  done
+  return 1
+}
+
+# Keycloak's admin CLI inside its container. The admin password never leaves
+# the container: it is read from the container's own environment.
+kc_login() {
+  wait_healthy keycloak 240 || die "Keycloak is not healthy: ./zentralctl logs keycloak"
+  # Right after a (re)start Keycloak reports ready a moment before logins work.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    dc exec -T keycloak sh -c "$KCADM config credentials --config $KCCFG --server http://localhost:8080 \
+      --realm master --user \"\$KC_BOOTSTRAP_ADMIN_USERNAME\" --password \"\$KC_BOOTSTRAP_ADMIN_PASSWORD\"" >/dev/null 2>&1 &&
+      return 0
+    sleep 3
+  done
+  die "Could not log in to Keycloak's admin CLI: ./zentralctl logs keycloak"
+}
+kc() { dc exec -T keycloak "$KCADM" "$@" --config "$KCCFG"; }
+# JSON on stdin. Quiet on success ("Created new …"); on failure, shows why and fails.
+kc_in() {
+  local out
+  out=$(dc exec -T keycloak "$KCADM" "$@" --config "$KCCFG" -f - 2>&1) || die "Keycloak: $out"
+}
+kc_value() { kc "$@" --format csv --noquotes 2>/dev/null | head -n 1 | tr -d '\r'; }
+
+user_id() {
+  local id
+  id=$(kc_value get users -r zentral -q exact=true -q "email=$1" --fields id)
+  [[ -n "$id" ]] || die "no user with e-mail $1"
+  echo "$id"
+}
+client_id() {
+  local id
+  id=$(kc_value get clients -r zentral -q "clientId=agent-$1" --fields id)
+  [[ -n "$id" ]] || die "no agent named $1"
+  echo "$id"
+}
+temporary_password() {  # user id → prints the password
+  local pw
+  pw="$(rand 6)-$(rand 6)-$(rand 6)"
+  printf '{"type":"password","value":"%s","temporary":true}' "$pw" | kc_in update "users/$1/reset-password" -r zentral
+  echo "$pw"
+}
+
+# --- setup -------------------------------------------------------------------------
+cmd_setup() {
+  local host="" idp="" email="" name=""
+  while (($#)); do
+    case "$1" in
+      --hostname) host=$2; shift 2 ;;
+      --idp-hostname) idp=$2; shift 2 ;;
+      --admin-email) email=$2; shift 2 ;;
+      --admin-name) name=$2; shift 2 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+
+  step "Checking this server"
+  [[ -f .env ]] && die ".env already exists: this server is set up. See ./zentralctl status"
+  command -v docker >/dev/null || die "Docker is not installed: https://docs.docker.com/engine/install/"
+  docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin is missing."
+  local compose_version
+  compose_version=$(docker compose version --short | sed 's/^v//')
+  [[ "$(printf '%s\n2.24.0\n' "$compose_version" | sort -V | head -n 1)" == 2.24.0 ]] ||
+    die "Docker Compose $compose_version is too old; 2.24 or newer is needed."
+  for tool in openssl curl git; do command -v "$tool" >/dev/null || die "$tool is not installed."; done
+  if command -v ss >/dev/null && ss -Hltn '( sport = :80 or sport = :443 )' | grep -q .; then
+    die "Port 80 or 443 is already in use on this server (another web server?). Free them first."
+  fi
+  local mem_kb
+  mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  ((mem_kb >= 3500000)) || warn "Less than 4 GB of memory: building the image may fail. Consider ZENTRAL_IMAGE (see the guide)."
+  say "ok: Docker Compose $compose_version, ports 80/443 free"
+
+  step "Hostnames"
+  local ip
+  ip=$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || curl -fsS4 --max-time 5 https://ifconfig.me 2>/dev/null || true)
+  if [[ -z "$host" ]]; then
+    [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "Could not detect the public IPv4 address. Pass --hostname desk.example.com"
+    host="$ip.sslip.io" # public DNS that maps <ip>.sslip.io to <ip>: real certificates without DNS setup
+  fi
+  [[ -n "$idp" ]] || idp="id.$host"
+  for h in "$host" "$idp"; do
+    [[ "$h" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "not a valid hostname: $h"
+    local resolved
+    resolved=$(getent ahostsv4 "$h" 2>/dev/null | awk 'NR==1 {print $1}')
+    if [[ -z "$resolved" ]]; then
+      die "$h does not resolve. Create a DNS A record pointing to ${ip:-this server}, then run setup again."
+    elif [[ -n "$ip" && "$resolved" != "$ip" ]]; then
+      warn "$h resolves to $resolved, but this server's public address is $ip."
+      confirm "Continue anyway?" || exit 1
+    fi
+  done
+  say "Zentral:          https://$host"
+  say "Sign-in service:  https://$idp"
+
+  if [[ -z "$email" ]]; then
+    read -r -p "Your e-mail address (first administrator): " email
+  fi
+  if [[ -z "$name" ]]; then
+    read -r -p "Your full name: " name
+  fi
+  [[ "$email" == *@*.* ]] || die "not an e-mail address: $email"
+  [[ -n "$name" ]] || die "a name is needed"
+
+  step "Writing configuration (.env, mode 600)"
+  local fernet
+  fernet=$(openssl rand -base64 32 | tr '+/' '-_')
+  umask 077
+  mkdir -p keys backups
+  cat >.env <<EOF
+# Zentral on a single server — written by \`zentralctl setup\` on $(date -u +%Y-%m-%d).
+# Contains secrets: never commit or share this file. Reference:
+# docs/operations/deploy-vps.md and docs/operations/configuration.md
+
+# Compose: the bundled sign-in service and nightly database dumps.
+COMPOSE_FILE=compose.yaml:compose.idp.yaml
+COMPOSE_PROFILES=backup
+
+# --- host -------------------------------------------------------------------------
+ZENTRAL_HOSTNAME=$host
+ZENTRAL_IDP_HOSTNAME=$idp
+ZENTRAL_PUBLIC_BASE_URL=https://$host
+# 127.0.0.1: the container's own health check
+ZENTRAL_ALLOWED_HOSTS=$host,127.0.0.1
+
+# --- passwords for the services (generated) --------------------------------------------
+POSTGRES_PASSWORD=$(rand 32)
+KEYCLOAK_DB_PASSWORD=$(rand 32)
+KEYCLOAK_ADMIN_PASSWORD=$(rand 32)
+
+# --- keys -------------------------------------------------------------------------------
+# Plain-text keys, knowingly allowed (\`zentral doctor\` warns). Without them the
+# data cannot be read: copy them to your password manager now (\`zentralctl keys\`).
+# For a KMS-wrapped keyring instead, see docs/operations/key-custody.md.
+ZENTRAL_KEY_PROVIDER=env
+ZENTRAL_ALLOW_ENV_KEYS=true
+ZENTRAL_ENCRYPTION_KEYS=$fernet
+ZENTRAL_BLIND_INDEX_KEY=$(rand 48)
+ZENTRAL_AUDIT_HMAC_KEY=$(rand 48)
+
+# --- AI classification --------------------------------------------------------------------
+# rules = keyword matching, nothing leaves the server. On-prem model:
+# docs/runbooks/switch-to-on-prem-ai.md
+ZENTRAL_AI_PROVIDER=rules
+
+# --- data protection and backups ---------------------------------------------------------
+ZENTRAL_RETENTION_DAYS=365
+BACKUP_KEEP_DAYS=14
+
+# Released image instead of building on this server:
+# ZENTRAL_IMAGE=ghcr.io/rogvid/zentral@sha256:<digest from the release notes>
+EOF
+  umask 022
+  say "ok"
+
+  step "Building and starting (the first build takes a few minutes)"
+  if [[ -z "$(env_value ZENTRAL_IMAGE)" ]]; then dc build; fi
+  dc pull --quiet --ignore-buildable || warn "Pulling images failed; retrying while starting."
+  dc up -d
+  wait_healthy api 300 || die "Zentral did not become healthy: ./zentralctl logs api"
+  wait_healthy keycloak 300 || die "The sign-in service did not become healthy: ./zentralctl logs keycloak"
+  say "ok: all services running"
+
+  step "Certificates and reachability"
+  local reachable=0
+  for _ in $(seq 40); do
+    if curl -fs --max-time 5 -o /dev/null "https://$host/healthz" &&
+      curl -fs --max-time 5 -o /dev/null "https://$idp/realms/zentral/.well-known/openid-configuration"; then
+      reachable=1
+      break
+    fi
+    sleep 3
+  done
+  if ((reachable)); then
+    say "ok: both hostnames answer over HTTPS with a valid certificate"
+  else
+    warn "No valid HTTPS answer yet. Usually: ports 80/443 closed in the provider's firewall, or DNS not pointing here."
+    warn "Check with: ./zentralctl logs caddy — Zentral keeps retrying the certificate."
+  fi
+
+  step "Pre-flight check"
+  cmd_doctor || warn "doctor reported a failure — see above."
+
+  step "First administrator"
+  kc_login
+  cmd_user_add "$email" "$name" admin
+
+  cat <<EOF
+
+$(printf '\033[1m')Zentral is running.$(printf '\033[0m')
+
+  Open      https://$host
+  Sign in   $email with the one-time password above; you then choose your
+            own password and register an authenticator app (required).
+
+  Before you put in anything real:
+   1. Store the keys in your password manager:   ./zentralctl keys
+   2. Copy ./backups off this server regularly (it holds a dump per day).
+   3. Add the people who will try it:           ./zentralctl user add …
+
+  Everyday:  ./zentralctl status · logs · upgrade · help
+EOF
+}
+
+# --- health ------------------------------------------------------------------------
+cmd_status() {
+  need_env
+  dc ps --format 'table {{.Service}}\t{{.Status}}'
+  step "Newest backups"
+  ls -lt backups/*.dump 2>/dev/null | head -n 4 | awk '{print $6, $7, $8, $9}' || true
+  [[ -n "$(ls backups/*.dump 2>/dev/null)" ]] || warn "no backups yet"
+  step "Disk"
+  df -h . | tail -n 1
+}
+
+cmd_doctor() {
+  need_env
+  dc run --rm --no-deps api doctor
+}
+
+cmd_verify() {
+  cmd_doctor
+  step "Audit trail"
+  dc run --rm --no-deps api audit verify
+}
+
+cmd_logs() {
+  need_env
+  if (($#)); then dc logs -f --tail 100 "$@"; else
+    local services=(api worker caddy)
+    uses_idp && services+=(keycloak)
+    dc logs -f --tail 100 "${services[@]}"
+  fi
+}
+
+# --- people ------------------------------------------------------------------------
+cmd_user_add() {
+  (($# >= 3)) || die "usage: zentralctl user add EMAIL \"FULL NAME\" ROLE…"
+  local email=$1 name=$2 first last id pw role
+  shift 2
+  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "not an e-mail address: $email"
+  [[ "$name" =~ ^[^\"\\[:cntrl:]]{1,100}$ ]] || die "the name may not contain quotes, backslashes or control characters"
+  for role in "$@"; do role_name "$role" >/dev/null; done
+  first=${name%% *}
+  last=${name#"$first"}
+  last=${last# }
+  printf '{"username":"%s","email":"%s","firstName":"%s","lastName":"%s","enabled":true,"emailVerified":true,"requiredActions":["UPDATE_PASSWORD","CONFIGURE_TOTP"]}' \
+    "$email" "$email" "$first" "${last:--}" | kc_in create users -r zentral
+  id=$(user_id "$email")
+  for role in "$@"; do kc add-roles -r zentral --uid "$id" --rolename "$(role_name "$role")"; done
+  pw=$(temporary_password "$id")
+  say "Created $email ($*)."
+  say "One-time password: $pw"
+  say "Give it to them over a separate channel. At first sign-in they choose a password and set up an authenticator app."
+}
+
+cmd_user_list() {
+  local role users
+  printf '%-40s %-8s %s\n' EMAIL ENABLED ROLES
+  declare -A roles=()
+  for role in $ROLES; do
+    while read -r users; do
+      [[ -n "$users" ]] && roles[$users]+="$role "
+    done < <(kc get "roles/$(role_name "$role")/users" -r zentral --fields username --format csv --noquotes 2>/dev/null | tr -d '\r')
+  done
+  kc get users -r zentral --fields username,enabled --format csv --noquotes | tr -d '\r' |
+    while IFS=, read -r user enabled; do
+      printf '%-40s %-8s %s\n' "$user" "$enabled" "${roles[$user]:-(none)}"
+    done
+}
+
+cmd_user_roles() {
+  (($# >= 2)) || die "usage: zentralctl user roles EMAIL ROLE…"
+  local email=$1 id role
+  shift
+  for role in "$@"; do role_name "$role" >/dev/null; done
+  id=$(user_id "$email")
+  for role in $ROLES; do
+    kc remove-roles -r zentral --uid "$id" --rolename "$(role_name "$role")" 2>/dev/null || true
+  done
+  for role in "$@"; do kc add-roles -r zentral --uid "$id" --rolename "$(role_name "$role")"; done
+  say "$email now has: $*. Takes effect at their next token refresh (within 5 minutes)."
+}
+
+cmd_user_enable() {
+  local id
+  id=$(user_id "$2")
+  kc update "users/$id" -r zentral -s "enabled=$1"
+  if [[ "$1" == false ]]; then
+    kc create "users/$id/logout" -r zentral >/dev/null 2>&1 || true
+    say "Disabled $2 and ended their sessions. A token already issued stays valid for at most 5 minutes."
+  else
+    say "Enabled $2."
+  fi
+}
+
+cmd_user_reset() {
+  local id cred type pw
+  id=$(user_id "$1")
+  kc get "users/$id/credentials" -r zentral --fields id,type --format csv --noquotes | tr -d '\r' |
+    while IFS=, read -r cred type; do
+      [[ "$type" == otp ]] && kc delete "users/$id/credentials/$cred" -r zentral
+    done
+  kc update "users/$id" -r zentral -s 'requiredActions=["UPDATE_PASSWORD","CONFIGURE_TOTP"]'
+  kc create "users/$id/logout" -r zentral >/dev/null 2>&1 || true
+  pw=$(temporary_password "$id")
+  say "Reset $1: sessions ended, authenticator app removed."
+  say "One-time password: $pw"
+}
+
+cmd_user() {
+  need_env
+  need_idp
+  local sub=${1:-}
+  shift || true
+  kc_login
+  case "$sub" in
+    add) cmd_user_add "$@" ;;
+    list) cmd_user_list ;;
+    roles) cmd_user_roles "$@" ;;
+    disable) [[ $# == 1 ]] || die "usage: zentralctl user disable EMAIL"; cmd_user_enable false "$1" ;;
+    enable) [[ $# == 1 ]] || die "usage: zentralctl user enable EMAIL"; cmd_user_enable true "$1" ;;
+    reset) [[ $# == 1 ]] || die "usage: zentralctl user reset EMAIL"; cmd_user_reset "$1" ;;
+    *) die "usage: zentralctl user add|list|roles|disable|enable|reset" ;;
+  esac
+}
+
+# --- AI agents ---------------------------------------------------------------------
+agent_secret() {
+  kc_value get "clients/$1/client-secret" -r zentral --fields value
+}
+
+agent_instructions() {
+  local idp host
+  idp=$(env_value ZENTRAL_IDP_HOSTNAME)
+  host=$(env_value ZENTRAL_HOSTNAME)
+  cat <<EOF
+  Client ID       agent-$1
+  Client secret   $2
+  Token endpoint  https://$idp/realms/zentral/protocol/openid-connect/token
+  MCP endpoint    https://$host/mcp
+
+  Store the secret in the agent's secret store; it is not shown again
+  (zentralctl agent rotate $1 issues a new one). Test:
+    curl -s https://$idp/realms/zentral/protocol/openid-connect/token \\
+      -d grant_type=client_credentials -d client_id=agent-$1 -d client_secret=…
+EOF
+}
+
+cmd_agent() {
+  need_env
+  need_idp
+  local sub=${1:-} name=${2:-} id role
+  kc_login
+  case "$sub" in
+    add)
+      [[ "$name" =~ ^[a-z0-9][a-z0-9-]{1,30}$ ]] || die "usage: zentralctl agent add NAME [ROLE] (NAME: lowercase letters, digits, dashes)"
+      role=$(role_name "${3:-automation}")
+      [[ "$role" == Zentral.Admin ]] && die "Never give an AI agent the admin role (docs/guides/mcp.md)."
+      printf '{"clientId":"agent-%s","name":"AI agent %s","enabled":true,"publicClient":false,"serviceAccountsEnabled":true,"standardFlowEnabled":false,"implicitFlowEnabled":false,"directAccessGrantsEnabled":false,"protocolMappers":[{"name":"zentral-api audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"zentral-api","access.token.claim":"true","id.token.claim":"false","introspection.token.claim":"true"}}]}' \
+        "$name" "$name" | kc_in create clients -r zentral
+      id=$(client_id "$name")
+      kc add-roles -r zentral --uusername "service-account-agent-$name" --rolename "$role"
+      say "Created agent $name with role $role."
+      agent_instructions "$name" "$(agent_secret "$id")"
+      ;;
+    list)
+      kc get clients -r zentral --fields clientId,enabled --format csv --noquotes | tr -d '\r' | grep '^agent-' || say "(no agents)"
+      ;;
+    remove)
+      id=$(client_id "$name")
+      kc delete "clients/$id" -r zentral
+      say "Removed agent $name. Tokens already issued stay valid for at most 5 minutes."
+      ;;
+    rotate)
+      id=$(client_id "$name")
+      kc create "clients/$id/client-secret" -r zentral >/dev/null
+      say "New secret for agent $name (the old one no longer works):"
+      agent_instructions "$name" "$(agent_secret "$id")"
+      ;;
+    *) die "usage: zentralctl agent add|list|remove|rotate NAME" ;;
+  esac
+}
+
+# --- data --------------------------------------------------------------------------
+cmd_backup() {  # [label]
+  need_env
+  wait_healthy backup 30 2>/dev/null || dc up -d backup >/dev/null
+  dc exec -T backup /bin/sh /usr/local/bin/zentral-backup once "${1:-}"
+}
+
+cmd_keys() {
+  need_env
+  cat <<EOF
+Store these lines in your password manager (or a sealed envelope), NOT next to
+the backups. Without them, the database and its backups cannot be read.
+Taken from .env on $(date -u +%Y-%m-%d) for $(env_value ZENTRAL_HOSTNAME):
+
+EOF
+  grep -E '^ZENTRAL_(ENCRYPTION_KEYS|BLIND_INDEX_KEY|AUDIT_HMAC_KEY|AUDIT_HMAC_PREVIOUS_KEYS)=' .env
+}
+
+cmd_restore() {
+  need_env
+  local file=${1:-} db base
+  [[ -f "$file" ]] || die "usage: zentralctl restore backups/<database>-<time>.dump"
+  base=$(basename "$file")
+  db=${base%%-*}
+  [[ "$db" == zentral || "$db" == keycloak ]] || die "cannot tell which database $base belongs to"
+  [[ "$db" == keycloak ]] && need_idp
+  warn "This replaces the current '$db' database with $base."
+  [[ "$db" == zentral ]] && warn "Erasures done after that backup was taken are undone: repeat them afterwards (GDPR)."
+  confirm "Restore?" || exit 1
+
+  # Work from a private copy: nothing below can touch the file being restored.
+  local copy
+  copy=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$copy'" EXIT
+  cp "$file" "$copy"
+  file=$copy
+
+  step "Safety backup of the current state"
+  cmd_backup pre-restore
+
+  step "Restoring $db"
+  if [[ "$db" == zentral ]]; then
+    dc stop api worker
+    dc exec -T db dropdb -U zentral --force zentral
+    dc exec -T db createdb -U zentral zentral
+    dc exec -T db pg_restore -U zentral -d zentral --no-owner --exit-on-error <"$file"
+    dc up -d
+    wait_healthy api 300 || die "Zentral did not become healthy: ./zentralctl logs api"
+    cmd_verify
+  else
+    dc stop keycloak
+    dc exec -T db dropdb -U zentral --force keycloak
+    dc exec -T db createdb -U zentral -O keycloak keycloak
+    dc exec -T db pg_restore -U zentral -d keycloak --no-owner --role=keycloak --exit-on-error <"$file"
+    dc up -d keycloak
+    wait_healthy keycloak 300 || die "Keycloak did not become healthy: ./zentralctl logs keycloak"
+  fi
+  say "Restored $db from $base. The state before the restore is in backups/*-pre-restore.dump."
+}
+
+cmd_drill() {
+  need_env
+  local latest scratch start
+  latest=$(ls -t backups/zentral-*.dump 2>/dev/null | head -n 1)
+  [[ -n "$latest" ]] || die "no backups yet: ./zentralctl backup"
+  scratch="zentral_drill_$(date -u +%Y%m%d%H%M%S)"
+  start=$SECONDS
+  step "Restoring $latest into scratch database $scratch"
+  dc exec -T db createdb -U zentral "$scratch"
+  # shellcheck disable=SC2064
+  trap "docker compose exec -T db dropdb -U zentral --force $scratch >/dev/null 2>&1 || true" EXIT
+  dc exec -T db pg_restore -U zentral -d "$scratch" --no-owner --exit-on-error <"$latest"
+  local url
+  url="postgresql+asyncpg://zentral:$(env_value POSTGRES_PASSWORD)@db:5432/$scratch"
+  step "Schema and decryption (doctor)"
+  dc run --rm --no-deps -e "ZENTRAL_DATABASE_URL=$url" api doctor
+  step "Audit trail"
+  dc run --rm --no-deps -e "ZENTRAL_DATABASE_URL=$url" api audit verify
+  say ""
+  say "Drill passed in $((SECONDS - start)) s: $(basename "$latest") restores, decrypts and verifies."
+}
+
+cmd_upgrade() {
+  need_env
+  step "Health before the change"
+  cmd_doctor || confirm "doctor reports a failure. Upgrade anyway?" || exit 1
+  step "Backup"
+  cmd_backup pre-upgrade
+  if [[ -z "$(env_value ZENTRAL_IMAGE)" ]]; then
+    step "New code"
+    git -C ../.. pull --ff-only
+    step "Building"
+    dc build --pull
+  fi
+  step "Updating the other images (patch releases)"
+  dc pull --quiet --ignore-buildable ||
+    warn "Could not refresh the PostgreSQL/Caddy/Keycloak images (registry unreachable or rate-limited); keeping the current ones."
+  step "Restarting (migrations run first)"
+  dc up -d --remove-orphans
+  wait_healthy api 300 || die "Zentral did not become healthy: ./zentralctl logs api — to go back, see docs/runbooks/upgrade.md"
+  if uses_idp; then wait_healthy keycloak 300 || die "Keycloak did not become healthy: ./zentralctl logs keycloak"; fi
+  step "Health after the change"
+  cmd_doctor
+  docker image prune -f >/dev/null
+}
+
+# --- dispatch ----------------------------------------------------------------------
+[[ "${1:-}" == -y || "${1:-}" == --yes ]] && { ASSUME_YES=1; shift; }
+command=${1:-help}
+shift || true
+case "$command" in
+  setup) cmd_setup "$@" ;;
+  status) cmd_status ;;
+  doctor) cmd_doctor ;;
+  verify) cmd_verify ;;
+  logs) cmd_logs "$@" ;;
+  user) cmd_user "$@" ;;
+  agent) cmd_agent "$@" ;;
+  backup) cmd_backup ;;
+  restore) cmd_restore "$@" ;;
+  drill) cmd_drill ;;
+  keys) cmd_keys ;;
+  upgrade) cmd_upgrade ;;
+  help | -h | --help) usage ;;
+  *) usage; exit 2 ;;
+esac

@@ -5,16 +5,28 @@
 #   docker compose up -d
 #   docker compose run --rm api doctor
 #
+# On a single VPS without an identity provider or KMS of your own, use
+# `./zentralctl setup` instead: it adds compose.idp.yaml (a bundled Keycloak)
+# and turns on the backup profile. docs/operations/deploy-vps.md
+#
 # Topology: caddy (TLS) → api ─┐
 #                      worker ─┴→ db          (+ optional on-prem model: --profile ai)
 #                                             (+ optional malware scanner: --profile attachments)
+#                                             (+ optional nightly database dumps: --profile backup)
 #
 # Only Caddy publishes ports. The database and the model server sit on an
 # internal network with no route to or from the internet.
 
 name: zentral
 
+# Docker keeps container logs forever by default; a full disk stops everything.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
 x-zentral: &zentral
+  <<: *logging
   image: ${ZENTRAL_IMAGE:-zentral:local}
   build:
     context: ../..
@@ -32,6 +44,7 @@ x-zentral: &zentral
 
 services:
   db:
+    <<: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -76,7 +89,8 @@ services:
     networks: [backend, egress]
 
   caddy:
-    image: caddy:2-alpine
+    <<: *logging
+    image: caddy:2.11-alpine
     restart: unless-stopped
     ports:
       - "80:80"
@@ -96,6 +110,7 @@ services:
   # On-prem model server. Start with: docker compose --profile ai up -d
   # then: docker compose exec ollama ollama pull llama3.1:8b
   ollama:
+    <<: *logging
     profiles: [ai]
     image: ollama/ollama:latest
     restart: unless-stopped
@@ -107,12 +122,44 @@ services:
   # and set ZENTRAL_ATTACHMENTS_ENABLED=true (ZENTRAL_CLAMAV_HOST defaults to "clamav").
   # It downloads signature updates itself, hence the egress network.
   clamav:
+    <<: *logging
     profiles: [attachments]
     image: clamav/clamav:stable
     restart: unless-stopped
     volumes:
       - clamav-data:/var/lib/clamav
     networks: [backend, egress]
+    security_opt: ["no-new-privileges:true"]
+
+  # Nightly database dumps into ./backups. Start with: docker compose --profile backup up -d
+  # Copy ./backups off the host: a backup on the same disk is not a backup.
+  # docs/runbooks/backup-restore.md
+  backup:
+    <<: *logging
+    profiles: [backup]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/usr/local/bin/zentral-backup"]
+    command: ["loop"]
+    environment:
+      PGHOST: db
+      PGUSER: zentral
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_DATABASES: ${BACKUP_DATABASES:-zentral}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backup.sh:/usr/local/bin/zentral-backup:ro
+      - ./backups:/backups
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/usr/local/bin/zentral-backup", "check"]
+      interval: 10m
+      start_period: 10m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
 networks:

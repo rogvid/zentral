@@ -220,6 +220,16 @@ class Settings(BaseSettings):
     # local_file provider: a 32-byte AES key (base64) in a file. Development,
     # tests and offline escrow copies only.
     local_kek_file: str = ""
+
+    # --- Bundled identity provider (`zentral idp`) ---------------------------
+    # Keycloak's internal address and its administrator, for managing people and
+    # AI agents in the realm Zentral trusts. Only the one-off admin container of
+    # the single-server deployment sets these; the API and worker never do.
+    keycloak_url: str = ""
+    keycloak_realm: str = "zentral"
+    keycloak_admin_user: str = "admin"
+    keycloak_admin_password: SecretStr = SecretStr("")
+
     # Tickets resolved/closed for longer than this are scrubbed of personal data.
     retention_days: int = Field(default=365, ge=1)
 

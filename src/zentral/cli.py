@@ -14,6 +14,7 @@ import typer
 from sqlalchemy import text
 
 from zentral.config import get_settings
+from zentral.idp.cli import idp_app
 
 if TYPE_CHECKING:
     from alembic.config import Config as AlembicConfig
@@ -25,6 +26,7 @@ keys_app = typer.Typer(no_args_is_help=True, help="Key management")
 app.add_typer(db_app, name="db")
 app.add_typer(audit_app, name="audit")
 app.add_typer(keys_app, name="keys")
+app.add_typer(idp_app, name="idp")
 
 
 @app.command()

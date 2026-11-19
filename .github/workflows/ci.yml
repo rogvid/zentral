@@ -131,3 +131,11 @@ jobs:
         run: |
           cp .env.example .env && sed -i 's/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=ci/' .env
           docker compose config --quiet
+      - name: Single-VPS overlay is valid
+        working-directory: deploy/compose
+        run: |
+          printf 'COMPOSE_FILE=compose.yaml:compose.idp.yaml\nCOMPOSE_PROFILES=backup\nZENTRAL_HOSTNAME=ci.example\nZENTRAL_IDP_HOSTNAME=id.ci.example\nPOSTGRES_PASSWORD=ci\nKEYCLOAK_DB_PASSWORD=ci\nKEYCLOAK_ADMIN_PASSWORD=ci\n' > .env
+          docker compose config --quiet
+          bash -n zentralctl && sh -n backup.sh
+          shellcheck --severity=warning zentralctl backup.sh
+          python3 -m json.tool idp/realm.json > /dev/null

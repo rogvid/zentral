@@ -1,0 +1,129 @@
+# Bundled identity provider: Keycloak, for installations without Entra ID or
+# another OpenID Connect provider of their own. Added on top of compose.yaml
+# by `./zentralctl setup` (COMPOSE_FILE in .env), so every `docker compose`
+# command includes it. docs/operations/deploy-vps.md
+#
+#   https://$ZENTRAL_IDP_HOSTNAME/realms/zentral/…   sign-in pages, tokens, account page
+#   everything else on that host (admin console, master realm): 404
+#
+# People and AI agents are managed with `./zentralctl user …` / `agent …`,
+# which run `zentral idp …` in the one-off idp-admin container below.
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+# Zentral trusts tokens from the bundled realm. The issuer must match the
+# public URL exactly; inside Docker that name resolves to Caddy (see below).
+x-oidc: &oidc
+  ZENTRAL_AUTH_MODE: oidc
+  ZENTRAL_OIDC_ISSUER: https://${ZENTRAL_IDP_HOSTNAME:?set ZENTRAL_IDP_HOSTNAME in .env}/realms/zentral
+  ZENTRAL_OIDC_AUDIENCES: zentral-api
+  ZENTRAL_OIDC_CLIENT_ID: zentral-web
+  ZENTRAL_OIDC_SCOPES: openid,profile,email
+  ZENTRAL_OIDC_ROLES_CLAIM: realm_access.roles
+
+services:
+  migrate:
+    environment: *oidc
+  api:
+    environment: *oidc
+  worker:
+    environment: *oidc
+
+  # Creates Keycloak's database and login on the shared PostgreSQL. Idempotent.
+  idp-db:
+    <<: *logging
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: zentral
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env}
+    command: ["sh", "-c", "psql -q -v ON_ERROR_STOP=1 -v pw=\"$$KEYCLOAK_DB_PASSWORD\" -f /idp/init-db.sql"]
+    volumes:
+      - ./idp/init-db.sql:/idp/init-db.sql:ro
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  keycloak:
+    <<: *logging
+    image: keycloak/keycloak:26.8
+    restart: unless-stopped
+    # The realm (roles, web client, password and lock-out policy) is imported
+    # on first start; later starts leave an existing realm alone.
+    command: ["start", "--import-realm"]
+    environment:
+      KC_HOSTNAME: https://${ZENTRAL_IDP_HOSTNAME}
+      KC_HTTP_ENABLED: "true" # plain HTTP inside Docker only; Caddy terminates TLS
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: 172.30.0.0/24 # Caddy's network (compose.yaml)
+      KC_HEALTH_ENABLED: "true"
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      # Administrator of Keycloak itself (master realm). Its console is not
+      # published; zentralctl uses this account inside the container.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      ZENTRAL_HOSTNAME: ${ZENTRAL_HOSTNAME} # used by the realm file
+    volumes:
+      - ./idp/realm.json:/opt/keycloak/data/import/zentral-realm.json:ro
+    depends_on:
+      idp-db: { condition: service_completed_successfully }
+    networks: [edge, backend] # no egress: Keycloak needs no outbound access
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # `zentral idp …` (people and AI agents), run one-off by `./zentralctl user|agent`.
+  # It gets Keycloak's admin login and nothing else: no Zentral keys, no
+  # database, no internet.
+  idp-admin:
+    <<: *logging
+    image: ${ZENTRAL_IMAGE:-zentral:local}
+    profiles: [tools]
+    restart: "no"
+    entrypoint: ["zentral", "idp"]
+    environment:
+      ZENTRAL_KEYCLOAK_URL: http://keycloak:8080
+      ZENTRAL_KEYCLOAK_ADMIN_USER: admin
+      ZENTRAL_KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      ZENTRAL_OIDC_ISSUER: https://${ZENTRAL_IDP_HOSTNAME}/realms/zentral # printed for agents
+      ZENTRAL_PUBLIC_BASE_URL: https://${ZENTRAL_HOSTNAME}
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "10001:10001"
+
+  caddy:
+    environment:
+      ZENTRAL_IDP_HOSTNAME: ${ZENTRAL_IDP_HOSTNAME}
+    volumes:
+      - ./idp/idp.caddy:/etc/caddy/sites/idp.caddy:ro
+    networks:
+      edge:
+        # Zentral checks tokens against the public issuer URL. This alias
+        # makes that name reach Caddy directly from inside Docker, so the
+        # check does not depend on the host routing to its own public IP.
+        aliases: ["${ZENTRAL_IDP_HOSTNAME}"]
+      egress: {}
+
+  backup:
+    environment:
+      BACKUP_DATABASES: zentral keycloak

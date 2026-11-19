@@ -27,6 +27,7 @@ come from, who owns each step, and what the outcome is.
 <div class="grid cards" markdown>
 
 - **Try it** — [Getting started](getting-started.md): a running instance in five minutes.
+- **Run it on one server** — [Single VPS](operations/deploy-vps.md): one command, sign-in included, no Azure or KMS needed.
 - **Deploy it** — [Deployment overview](operations/deployment.md) and the [first-deployment runbook](runbooks/first-deployment.md).
 - **Understand it** — [Design principles](design-principles.md) and [architecture](architecture/overview.md).
 - **Assess it** — [Security architecture](architecture/security.md), [threat model](architecture/threat-model.md) and the honest [security posture](compliance/security-posture.md).

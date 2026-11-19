@@ -203,6 +203,10 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_VAULT_KUBERNETES_MOUNT` | `kubernetes` | str |
 | `ZENTRAL_VAULT_KUBERNETES_TOKEN_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/token` | str |
 | `ZENTRAL_LOCAL_KEK_FILE` | *(empty)* | str |
+| `ZENTRAL_KEYCLOAK_URL` | *(empty)* | str |
+| `ZENTRAL_KEYCLOAK_REALM` | `zentral` | str |
+| `ZENTRAL_KEYCLOAK_ADMIN_USER` | `admin` | str |
+| `ZENTRAL_KEYCLOAK_ADMIN_PASSWORD` | *(secret, none)* | SecretStr |
 | `ZENTRAL_RETENTION_DAYS` | `365` | int |
 | `ZENTRAL_AI_PROVIDER` | `rules` | str |
 | `ZENTRAL_AI_MODEL` | *(empty)* | str |

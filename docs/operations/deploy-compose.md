@@ -1,7 +1,11 @@
 # Deploy with Docker Compose
 
 A complete installation on one host: TLS proxy, API, worker and PostgreSQL —
-optionally an on-prem model server. Files are in
+optionally an on-prem model server.
+
+!!! tip "No identity provider or KMS of your own?"
+    [Deploy on a single VPS](deploy-vps.md) sets up this same stack with one
+    command, including a bundled sign-in service and daily backups. Files are in
 [`deploy/compose`](https://github.com/rogvid/zentral/tree/main/deploy/compose).
 
 ```text
@@ -83,7 +87,7 @@ Continue with the [first-deployment runbook](../runbooks/first-deployment.md#in-
 | Verify audit trail | `docker compose run --rm api audit verify` |
 | Stop / start | `docker compose stop` / `docker compose up -d` |
 | Upgrade | [Upgrade runbook](../runbooks/upgrade.md) |
-| Backup | [Backup runbook](../runbooks/backup-restore.md) |
+| Backup | [Backup runbook](../runbooks/backup-restore.md), or the built-in daily dumps: `--profile backup` (below) |
 
 ## Variations
 
@@ -105,6 +109,18 @@ ZENTRAL_AI_MODEL=llama3.1:8b
 `docker compose up -d worker` and check `doctor`. The model server is only
 reachable on the internal network. For GPU use, add your runtime's device
 reservation to the `ollama` service.
+
+### Daily database dumps on the host
+
+```bash
+mkdir -p backups && chmod 700 backups
+docker compose --profile backup up -d     # or COMPOSE_PROFILES=backup in .env
+```
+
+The `backup` service writes `backups/zentral-<time>.dump` once a day and
+deletes dumps older than `BACKUP_KEEP_DAYS` (14). Its health check fails when
+the newest dump is more than 26 hours old. Copy the directory off the host —
+see the [backup runbook](../runbooks/backup-restore.md).
 
 ### Internal CA or existing certificates
 

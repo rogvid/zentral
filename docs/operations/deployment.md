@@ -28,13 +28,18 @@ cluster.
 
 ## Choose a path
 
-| | Docker Compose | Kubernetes |
-|---|---|---|
-| For | One host; small and medium desks; evaluation | You already run Kubernetes |
-| TLS | Automatic (Caddy) | Your ingress + cert-manager |
-| Database | Included container (or external) | External (managed) |
-| Guide | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
+| | Single VPS | Docker Compose | Kubernetes |
+|---|---|---|---|
+| For | One server, no identity provider or KMS of your own | One host with your Entra ID / OIDC and KMS | You already run Kubernetes |
+| Sign-in | Bundled Keycloak (password + authenticator app) | Entra ID or OIDC | Entra ID or OIDC |
+| Keys | Plain text in `.env`, knowingly allowed | KMS-wrapped keyring | KMS-wrapped keyring |
+| TLS | Automatic (Caddy; works without DNS) | Automatic (Caddy) | Your ingress + cert-manager |
+| Database | Included container, daily dumps | Included container (or external) | External (managed) |
+| Set up with | `./zentralctl setup` | `.env` + `docker compose up` | `kubectl apply -k` |
+| Guide | [Deploy on a single VPS](deploy-vps.md) | [Deploy with Docker Compose](deploy-compose.md) | [Deploy on Kubernetes](deploy-kubernetes.md) |
 
+The single-VPS setup is the Compose deployment plus a bundled identity
+provider and backups, so you can move from one to the other by configuration.
 Either way, follow the **[first-deployment runbook](../runbooks/first-deployment.md)**
 — it is the same ten steps with the platform-specific commands linked.
 

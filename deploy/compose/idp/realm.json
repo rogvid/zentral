@@ -43,7 +43,8 @@
       { "name": "Zentral.Viewer", "description": "Reads tickets, personal data masked" },
       { "name": "Zentral.Auditor", "description": "Reads the audit trail" },
       { "name": "Zentral.PrivacyOfficer", "description": "Handles access and erasure requests" },
-      { "name": "Zentral.Automation", "description": "AI agents: triage with personal data masked" }
+      { "name": "Zentral.Automation", "description": "AI agents: triage with personal data masked" },
+      { "name": "Zentral.Ingest", "description": "Services that may only submit new issues" }
     ]
   },
 

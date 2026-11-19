@@ -7,7 +7,7 @@
 #   everything else on that host (admin console, master realm): 404
 #
 # People and AI agents are managed with `./zentralctl user …` / `agent …`,
-# which use Keycloak's admin CLI inside the container.
+# which run `zentral idp …` in the one-off idp-admin container below.
 
 x-logging: &logging
   logging:
@@ -88,6 +88,28 @@ services:
       start_period: 120s
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+  # `zentral idp …` (people and AI agents), run one-off by `./zentralctl user|agent`.
+  # It gets Keycloak's admin login and nothing else: no Zentral keys, no
+  # database, no internet.
+  idp-admin:
+    <<: *logging
+    image: ${ZENTRAL_IMAGE:-zentral:local}
+    profiles: [tools]
+    restart: "no"
+    entrypoint: ["zentral", "idp"]
+    environment:
+      ZENTRAL_KEYCLOAK_URL: http://keycloak:8080
+      ZENTRAL_KEYCLOAK_ADMIN_USER: admin
+      ZENTRAL_KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      ZENTRAL_OIDC_ISSUER: https://${ZENTRAL_IDP_HOSTNAME}/realms/zentral # printed for agents
+      ZENTRAL_PUBLIC_BASE_URL: https://${ZENTRAL_HOSTNAME}
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "10001:10001"
 
   caddy:
     environment:

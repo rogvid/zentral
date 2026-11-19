@@ -13,8 +13,13 @@ section for a version as its release notes.
   KMS: `deploy/compose/zentralctl setup` runs the Compose stack in production
   mode with a bundled Keycloak (`compose.idp.yaml`): password plus required
   authenticator app, lock-out, no public admin console. `zentralctl` also
-  manages people and AI agents, backups, restores, restore drills and
-  upgrades. Without a DNS name, certificates are issued for `<ip>.sslip.io`.
+  runs backups, restores, restore drills and upgrades, and resumes an
+  interrupted setup. Without a DNS name, certificates are issued for
+  `<ip>.sslip.io`.
+- `zentral idp user …` / `zentral idp agent …`: people and AI agents in the
+  bundled realm, through Keycloak's admin API, with roles taken from
+  Zentral's own role list. Settings `ZENTRAL_KEYCLOAK_URL`, `_REALM`,
+  `_ADMIN_USER`, `_ADMIN_PASSWORD`. The realm now also defines `Zentral.Ingest`.
 - Compose: opt-in `backup` profile with daily database dumps and a freshness
   health check; container log rotation; Caddy pinned to 2.11; `Caddyfile`
   imports extra sites from `sites/*.caddy`.

@@ -73,6 +73,15 @@ give an agent `Zentral.Admin`.
     claim (or a value you map with `ZENTRAL_ROLE_MAP`). See
     [Identity — other OIDC providers](../operations/identity-oidc.md#service-accounts).
 
+=== "Single VPS (bundled sign-in)"
+
+    ```bash
+    ./zentralctl agent add triage-bot      # prints client ID, secret, token endpoint
+    ```
+
+    The agent obtains tokens with the client-credentials grant from the printed
+    token endpoint. See [Deploy on a single VPS](../operations/deploy-vps.md#ai-agents).
+
 === "Local development"
 
     ```bash

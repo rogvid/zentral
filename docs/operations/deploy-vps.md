@@ -8,7 +8,7 @@ and adds what such a server otherwise lacks:
 | | |
 |---|---|
 | **Sign-in** | A bundled [Keycloak](https://www.keycloak.org/), configured for Zentral: email + password + **authenticator app (required for everyone)**, lock-out after repeated failures, password policy. Its admin console is not reachable from the internet. |
-| **People and AI agents** | Managed with `./zentralctl user …` and `./zentralctl agent …` |
+| **People and AI agents** | Managed with `./zentralctl user …` and `./zentralctl agent …` (`zentral idp`) |
 | **HTTPS** | Automatic certificates; with no DNS name of your own, `<ip>.sslip.io` works out of the box |
 | **Backups** | Database dumps every day, kept 14 days, plus a one-command restore drill |
 | **Operations** | `./zentralctl status · logs · upgrade · backup · restore · drill` |
@@ -43,9 +43,14 @@ git clone https://github.com/rogvid/zentral && cd zentral/deploy/compose
 ```
 
 It checks the server, asks for your e-mail address and name, writes `.env`
-(mode 600) with generated passwords and keys, builds and starts everything,
-verifies HTTPS and runs `zentral doctor`. Then it creates you as the first
-administrator and prints a **one-time password**.
+(mode 600) with generated passwords, builds the image, has Zentral generate its
+keys (`zentral keys generate`), starts everything, verifies HTTPS and runs
+`zentral doctor`. Then it creates you as the first administrator and prints a
+**one-time password**.
+
+If setup stops part-way — a failed build, a closed SSH session — fix the cause
+and run `./zentralctl setup` again: it resumes with the configuration it
+already wrote (new passwords would no longer match the database).
 
 Open the address it shows and sign in. You will be asked to choose your own
 password and to register an authenticator app (any TOTP app: Microsoft
@@ -88,8 +93,10 @@ whoever controls the server can read the data. Moving the keys to a
 ./zentralctl user disable jane@example.com    # leaver: also ends their sessions
 ```
 
-Roles: `admin`, `agent`, `viewer`, `auditor`, `privacy`, `automation` — see
-[Roles and permissions](../compliance/rbac.md). Give the one-time password over
+Roles: `admin`, `agent`, `viewer`, `auditor`, `privacy-officer`, `automation`,
+`ingest` (or the full `Zentral.…` names) — see
+[Roles and permissions](../compliance/rbac.md). Names may contain accents and
+apostrophes but not `< > " & $ % ! # ?` (Keycloak's rule). Give the one-time password over
 a different channel than the address. People change their password and
 authenticator app themselves at
 `https://id.<your host>/realms/zentral/account`.
@@ -112,8 +119,21 @@ at most.
 prints a client ID, a secret, the token endpoint and the MCP endpoint. The
 agent obtains tokens with the client-credentials grant and calls
 `https://<your host>/mcp` — see [AI agents over MCP](../guides/mcp.md).
-`agent list`, `agent rotate NAME` (new secret) and `agent remove NAME` manage
-them. `zentralctl` refuses to give an agent the admin role.
+`agent list`, `agent rotate NAME` (new secret; the old one stops working at
+once) and `agent remove NAME` manage them. An agent can hold `automation`,
+`ingest`, `viewer` or `agent`; the people's roles — admin, auditor, privacy
+officer — are refused.
+
+## How it fits together
+
+`zentralctl` does only what has to happen on the host: configuration files,
+Docker, backups on disk. Everything about Zentral itself is the `zentral` CLI
+in a container — `doctor`, `audit verify`, `keys generate`, and `zentral idp`
+for people and agents. `zentral idp` runs in a one-off `idp-admin` container
+that holds Keycloak's admin login and nothing else: no Zentral keys, no
+database password, no internet access. The roles it offers come from Zentral's
+own role list, and the test suite checks that the imported realm
+(`idp/realm.json`) defines exactly those roles.
 
 ## Operating it
 
@@ -180,7 +200,8 @@ only, and watch disk space.
 | Sign-out shows "Do you want to log out?" | Expected: confirm once. |
 | Signed in, but "Your role does not include …" | `./zentralctl user list` — give the person a role. |
 | Someone is locked out | Wait 15 minutes, or `./zentralctl user reset EMAIL`. |
-| `zentralctl user …`: "Keycloak is not healthy" | `./zentralctl logs keycloak`; it needs about a minute after a start. |
+| `zentralctl user …`: "The sign-in service is not healthy" | `./zentralctl logs keycloak`; it needs about a minute after a start. |
+| Setup stopped half-way | Fix the cause and run `./zentralctl setup` again; it resumes. |
 | Anything else | [Troubleshooting runbook](../runbooks/troubleshooting.md) |
 
 ### Changing the hostname

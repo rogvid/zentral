@@ -41,7 +41,7 @@ def create_app(
     validator: Authenticator | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, exception_messages=settings.env == "development")
     init_sentry(settings)
     runtime = runtime or build_runtime(settings)
     limiter = RateLimiter()

@@ -174,7 +174,7 @@ def worker() -> None:
 
     async def main() -> None:
         settings = get_settings()
-        configure_logging(settings.log_level)
+        configure_logging(settings.log_level, exception_messages=settings.env == "development")
         init_sentry(settings)
         runtime = build_runtime(settings)
         stop = asyncio.Event()

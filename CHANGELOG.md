@@ -42,8 +42,9 @@ section for a version as its release notes.
 - Tracebacks on stdout are now scrubbed like every other log value. The text
   of an unhandled exception could carry e-mail addresses, passwords and other
   identifiers from the request into the container's log. Secrets are also
-  recognised when quoted, as in `{'password': 'two words'}`. Names and other
-  free text no pattern recognises can still appear in an exception's message.
+  recognised when quoted, as in `{'password': 'two words'}`. Outside
+  development, tracebacks show exception types and stack frames without the
+  messages, including chained exceptions, because no pattern recognises a name.
 
 ## [1.0.0]
 

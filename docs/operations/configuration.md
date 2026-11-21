@@ -163,6 +163,7 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_AUTO_CLOSE_DAYS` | `7` | int |
 | `ZENTRAL_AUTH_MODE` | `entra` | one of ['entra', 'oidc', 'dev'] |
 | `ZENTRAL_ROLE_MAP` | *(empty)* | dict[str, str] |
+| `ZENTRAL_DEV_AUTH_PASSWORD` | *(secret, none)* | SecretStr |
 | `ZENTRAL_ENTRA_TENANT_ID` | *(empty)* | str |
 | `ZENTRAL_ENTRA_API_CLIENT_ID` | *(empty)* | str |
 | `ZENTRAL_ENTRA_SPA_CLIENT_ID` | *(empty)* | str |

@@ -5,7 +5,10 @@ import "@fontsource-variable/fraunces/soft.css";
 import "@fontsource-variable/fraunces/soft-italic.css";
 import "@fontsource-variable/inter/index.css";
 import { App } from "./App";
+import { startSentry } from "./sentry";
 import "./styles.css";
+
+startSentry();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

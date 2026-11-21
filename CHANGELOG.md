@@ -32,6 +32,11 @@ section for a version as its release notes.
   health check; container log rotation; Caddy pinned to 2.11; `Caddyfile`
   imports extra sites from `sites/*.caddy`.
 
+### Changed
+
+- The release workflow tags images `release-sha-<commit>` instead of
+  `sha-<commit>`, which now belongs to the deploy workflow.
+
 ### Fixed
 
 - Tracebacks on stdout are now scrubbed like every other log value. The text

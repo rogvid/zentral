@@ -20,6 +20,7 @@ There are two deploy paths, and they share the image.
 
 - **The webhost** (`https://zentral.kvist.dev` on vps-1): `.github/workflows/deploy.yml` builds `ghcr.io/rogvid/zentral:sha-<commit>` after CI passes on `main` and runs `deploy zentral sha-<commit>` over SSH.
   The server's compose file, `app.env`, Caddy site and dump hook live in the provisioning repo (`hosts/mise.vps-1.toml`), and secrets in its sops file.
+  The release workflow tags its images `release-sha-<commit>`, so it can never overwrite a deployed `sha-<commit>`.
 - **`deploy/compose` and `zentralctl`**: for other operators on their own server, with their own Caddy, Keycloak and backups.
   Do not make it depend on the webhost, or the reverse.
 

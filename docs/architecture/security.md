@@ -131,7 +131,8 @@ an explicit allow-list, because loading a plug-in executes its code.
 
 ## Configuration that cannot be weakened by accident
 
-In production the process refuses to start if: development sign-in is enabled;
+In production the process refuses to start if: development sign-in is enabled
+without a `ZENTRAL_DEV_AUTH_PASSWORD` of at least 32 characters;
 the database is SQLite; the public URL is not HTTPS; CORS allows `*`; any of
 the three keys is missing or short; keys are in plain text in the environment
 without `ZENTRAL_ALLOW_ENV_KEYS`, or set there next to a key provider; the

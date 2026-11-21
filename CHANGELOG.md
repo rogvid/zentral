@@ -9,6 +9,14 @@ section for a version as its release notes.
 
 ### Added
 
+- **Error monitoring with Sentry**, off unless configured
+  (`ZENTRAL_SENTRY_DSN`, build argument `VITE_SENTRY_DSN`). Only code-level data
+  is sent: error types, stack frames without variables, endpoint names, status
+  codes, timings and the release.
+- `ZENTRAL_DEV_AUTH_PASSWORD`: development sign-in on a test server in
+  production mode, behind a password of at least 32 characters. Without it
+  production still refuses development sign-in.
+- Deploy workflow for the maintainers' own server (`.github/workflows/deploy.yml`).
 - **Deploy on a single VPS** without Entra ID, another identity provider or a
   KMS: `deploy/compose/zentralctl setup` runs the Compose stack in production
   mode with a bundled Keycloak (`compose.idp.yaml`): password plus required

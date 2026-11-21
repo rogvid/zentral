@@ -19,20 +19,27 @@ and the logs of the API and worker. Every client-visible error carries an
 | Redirect loop | Redirect URI in the IdP must be exactly `https://host/` (type SPA for Entra) |
 | "Sign-in response did not match the request" | Sign-in was started in another tab or the session storage was cleared; try again |
 | Signed in but "role does not include access" | No Zentral role in the token. `GET /api/v1/me` shows the roles Zentral derived |
-| Every API call `401` | See the `authentication_failed` log line; its `reason` names the failed check |
+| Every API call `401` | See the `authentication_failed` log line; its `cause` names a failed token check |
 | `400` on every request | `Host` header not in `ZENTRAL_ALLOWED_HOSTS` — typical behind a proxy that rewrites the host |
 
-Reasons in `authentication_failed`:
+The `cause` in `authentication_failed`:
 
-| `reason` | Meaning |
+| `cause` | Meaning |
 |---|---|
-| `token rejected: InvalidAudienceError` | Token is for another application: wrong API client ID / audience |
-| `token rejected: InvalidIssuerError` | Wrong tenant/issuer; for Entra, `requestedAccessTokenVersion` is not 2 |
-| `token rejected: ExpiredSignatureError` | Expired — clock skew over 60 s, or a client that does not refresh |
-| `unknown signing key` | Keys not fetched (see `jwks_refresh_failed`) or token from another IdP |
-| `unsupported signing algorithm` | Add the algorithm to `ZENTRAL_OIDC_ALGORITHMS` (asymmetric only) |
-| `required scope missing` | The web client did not request the API scope |
-| `service token carries no Zentral role` | App role not granted / not mapped |
+| `InvalidAudienceError` | Token is for another application: wrong API client ID / audience |
+| `InvalidIssuerError` | Wrong tenant/issuer; for Entra, `requestedAccessTokenVersion` is not 2 |
+| `ExpiredSignatureError` | Expired - clock skew over 60 s, or a client that does not refresh |
+
+With no `cause`, one of Zentral's own checks refused the token.
+The log does not say which, because exception text stays out of it.
+Check these in turn:
+
+| Check | What to do |
+|---|---|
+| Unknown signing key | Keys not fetched (see `jwks_refresh_failed`) or token from another IdP |
+| Unsupported signing algorithm | Add the algorithm to `ZENTRAL_OIDC_ALGORITHMS` (asymmetric only) |
+| Required scope missing | The web client did not request the API scope |
+| Service token carries no Zentral role | App role not granted / not mapped |
 
 ## People cannot see tickets
 

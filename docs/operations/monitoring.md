@@ -37,10 +37,10 @@ log agent. Three kinds of line, distinguished by `logger`:
 === "Application events"
 
     ```json
-    {"event":"authentication_failed","reason":"token rejected: ExpiredSignatureError","ip":"203.0.113.9","level":"warning"}
+    {"event":"authentication_failed","error":"AuthenticationError","cause":"ExpiredSignatureError","ip":"203.0.113.9","level":"warning"}
     {"event":"hook_auth_failed","source_id":"7a1e…","ip":"203.0.113.9","level":"warning"}
-    {"event":"job_failed","kind":"send_message","attempt":2,"error":"ConnectorError: Graph returned 503","level":"warning"}
-    {"event":"ai_provider_failed","provider":"openai_compatible","reason":"model endpoint unreachable: ConnectError","level":"warning"}
+    {"event":"job_failed","kind":"send_message","attempt":2,"error":"ConnectorError","level":"warning"}
+    {"event":"ai_provider_failed","provider":"openai_compatible","error":"AIError","cause":"ConnectError","level":"warning"}
     {"event":"jwks_refresh_failed","error":"ConnectTimeout","level":"error"}
     ```
 

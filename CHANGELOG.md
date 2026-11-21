@@ -43,8 +43,11 @@ section for a version as its release notes.
   of an unhandled exception could carry e-mail addresses, passwords and other
   identifiers from the request into the container's log. Secrets are also
   recognised when quoted, as in `{'password': 'two words'}`. Outside
-  development, tracebacks show exception types and stack frames without the
-  messages, including chained exceptions, because no pattern recognises a name.
+  development, no exception message reaches stdout or stderr, because no
+  pattern recognises a name. Tracebacks and crash reports show types and stack
+  frames, log fields carry `error` and `cause` types instead of `reason` text,
+  and library warnings and errors lose their text. A refused configuration
+  shows only its type in the log: run `zentral doctor` for the reason.
 
 ## [1.0.0]
 

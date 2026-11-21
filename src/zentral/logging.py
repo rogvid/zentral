@@ -6,9 +6,11 @@ of personal data. Rules enforced here and by convention in the code base:
 * request bodies, message content, subjects and query strings are never logged;
 * a redaction processor scrubs anything that looks like an e-mail address,
   token or other identifier from every string value as a safety net;
-* tracebacks, from any library, show exception types and stack frames without
-  the messages, which can quote the request that caused them. Patterns cannot
-  catch a name, so only development keeps messages;
+* outside development no exception message reaches stdout or stderr, because
+  it can quote the request that caused it and no pattern catches a name.
+  Tracebacks and crash reports show types and stack frames, Zentral's own log
+  lines name the type (:func:`error_fields`), and warnings and errors from
+  libraries, which often build their text from an exception, lose their text;
 * security-relevant *events* go to the audit trail (and are mirrored here
   under the ``zentral.audit`` logger for SIEM shipping).
 """
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 import traceback
 from collections.abc import MutableMapping
 from typing import Any
@@ -103,9 +106,80 @@ class _RedactingFormatter(logging.Formatter):
         return redact(super().formatStack(stack_info))
 
 
+def _without_exception(value: Any) -> Any:
+    return _type_name(value) if isinstance(value, BaseException) else value
+
+
 class _MessageFreeFormatter(_RedactingFormatter):
+    def format(self, record: logging.LogRecord) -> str:
+        safe = logging.makeLogRecord(record.__dict__)
+        safe.exc_text = None  # another handler's rendering would still hold the message
+        if record.name.partition(".")[0] != "zentral" and record.levelno >= logging.WARNING:
+            safe.msg, safe.args = f"{record.name} {record.levelname}: [message not logged]", None
+        else:
+            safe.msg = _without_exception(record.msg)
+            if isinstance(record.args, tuple):
+                safe.args = tuple(_without_exception(arg) for arg in record.args)
+            elif record.args:
+                safe.args = {k: _without_exception(v) for k, v in record.args.items()}
+        return super().format(safe)
+
     def formatException(self, ei: Any) -> str:
         return redact(_format_without_messages(ei))
+
+
+def _json_without_exceptions(value: Any) -> str:
+    return type(value).__name__ if isinstance(value, BaseException) else repr(value)
+
+
+def error_fields(exc: BaseException) -> dict[str, str]:
+    """Log fields describing a failure by its types, never its text."""
+    fields = {"error": type(exc).__name__}
+    if exc.__cause__ is not None:
+        fields["cause"] = type(exc.__cause__).__name__
+    return fields
+
+
+def _development() -> bool:
+    """Asked at crash time; a configuration that cannot be read counts as production."""
+    try:
+        from zentral.config import get_settings
+
+        return get_settings().env == "development"
+    except Exception:
+        return False
+
+
+def _write_crash(exc_info: Any) -> None:
+    sys.stderr.write(f"{redact(_format_without_messages(exc_info))}\n")
+
+
+def _report_crash(kind: Any, value: Any, tb: Any) -> None:
+    if _development():
+        sys.__excepthook__(kind, value, tb)
+    else:
+        _write_crash((kind, value, tb))
+
+
+def _report_thread_crash(args: Any) -> None:
+    if _development():
+        threading.__excepthook__(args)
+    elif args.exc_type is not SystemExit:  # a thread's normal way out
+        _write_crash((args.exc_type, args.exc_value, args.exc_traceback))
+
+
+def _report_unraisable(args: Any) -> None:
+    if _development():
+        sys.__unraisablehook__(args)
+    else:
+        _write_crash((args.exc_type, args.exc_value, args.exc_traceback))
+
+
+def install_crash_hooks() -> None:
+    """Keep messages out of what Python prints for an exception nobody caught."""
+    sys.excepthook = _report_crash
+    threading.excepthook = _report_thread_crash
+    sys.unraisablehook = _report_unraisable
 
 
 def configure_logging(level: str = "INFO", *, exception_messages: bool = False) -> None:
@@ -130,7 +204,9 @@ def configure_logging(level: str = "INFO", *, exception_messages: bool = False) 
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             render_exception,  # before _scrub, which then covers its text
             _scrub,
-            structlog.processors.JSONRenderer(),
+            structlog.processors.JSONRenderer(
+                **({} if exception_messages else {"default": _json_without_exceptions})
+            ),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(level.upper())),
         logger_factory=structlog.stdlib.LoggerFactory(),

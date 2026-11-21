@@ -34,6 +34,7 @@ Where zentral differs from the `web-app-stack` skill, with the reason.
 - Layout: `src/zentral` and `web/` instead of `backend/` and `frontend/`, because the project predates the webhost and its packaging depends on it.
 - Tasks: `Makefile` and `uv`, no `mise.toml` yet, because the project predates the convention.
 - Logging: `structlog` instead of `loguru`, because its processors redact personal data from every log line.
+- Exception text: outside development no exception message reaches stdout or stderr, and log lines use `error_fields(exc)`, because a message can quote a name and no pattern catches one; `zentral doctor` gives the reason for a refused configuration.
 - Settings: every variable has the `ZENTRAL_` prefix (`ZENTRAL_ENV`, `ZENTRAL_SENTRY_DSN`, `ZENTRAL_SENTRY_RELEASE`), because pydantic-settings reads the whole configuration under that prefix.
 - Port: the container listens on 8000 instead of 8080, because the image and `deploy/compose` already use it.
 - Health: the deploy waits on `/readyz` (database and schema version) so a bad migration rolls back, and uptime checks use `/healthz`, instead of `/api/health`.

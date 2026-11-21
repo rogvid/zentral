@@ -46,6 +46,7 @@ section for a version as its release notes.
   development, no exception message reaches stdout or stderr, because no
   pattern recognises a name. Tracebacks and crash reports show types and stack
   frames, log fields carry `error` and `cause` types instead of `reason` text,
+  sign-in failures also carry a fixed `check` code,
   and library warnings and errors lose their text. A refused configuration
   shows only its type in the log: run `zentral doctor` for the reason.
 

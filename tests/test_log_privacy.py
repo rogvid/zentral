@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -13,6 +14,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+import jwt
 import pytest
 import structlog
 
@@ -25,8 +27,10 @@ from zentral.connectors.base import Capability, ConnectorError, PollResult
 from zentral.db.models import IngestSource, Job
 from zentral.logging import configure_logging
 from zentral.mcp_server import _Verifier
+from zentral.security import tokens
+from zentral.security.devauth import LocalIssuer
 from zentral.security.redaction import redact
-from zentral.security.tokens import AuthenticationError
+from zentral.security.tokens import AuthCheck, AuthenticationError
 from zentral.services import jobs
 
 NAME = "Margit Joensen"  # matches no redaction pattern
@@ -191,6 +195,96 @@ async def test_failed_mcp_sign_in_logs_the_type(monkeypatch, capsys):
     )
 
 
+def signed_without_key_id(issuer: LocalIssuer) -> str:
+    return jwt.encode({"sub": "x"}, issuer._key, algorithm="RS256")
+
+
+def person(issuer: LocalIssuer, **fields) -> str:
+    return issuer.issue(subject="probe", roles=[], name=NAME, **fields)
+
+
+def application(issuer: LocalIssuer, **fields) -> str:
+    return issuer.issue(subject="probe", name=NAME, app=True, **fields)
+
+
+SIGN_IN_FAILURES = {
+    AuthCheck.MALFORMED: lambda _issuer: "garbage",
+    AuthCheck.UNSUPPORTED_ALGORITHM: lambda _issuer: jwt.encode(
+        {"sub": "x"}, "k" * 32, algorithm="HS256", headers={"kid": "x"}
+    ),
+    AuthCheck.MISSING_KEY_ID: signed_without_key_id,
+    AuthCheck.UNKNOWN_SIGNING_KEY: lambda _issuer: person(LocalIssuer()),
+    AuthCheck.REJECTED: lambda issuer: person(issuer, lifetime=-3600),
+    AuthCheck.WRONG_TENANT: lambda issuer: person(issuer, claims={"tid": "another-tenant"}),
+    AuthCheck.UNUSABLE_SUBJECT: lambda issuer: person(issuer, claims={"oid": None}),
+    AuthCheck.APP_HAS_SCOPES: lambda issuer: application(
+        issuer, roles=["Zentral.Automation"], claims={"scp": "extra"}
+    ),
+    AuthCheck.SERVICE_NO_ROLE: lambda issuer: application(issuer, roles=[]),
+    AuthCheck.SCOPE_MISSING: lambda issuer: person(issuer, claims={"scp": "something.else"}),
+}
+
+
+@pytest.mark.parametrize("check", SIGN_IN_FAILURES, ids=str)
+async def test_each_sign_in_failure_logs_its_own_code(runtime, issuer, monkeypatch, capsys, check):
+    import zentral.mcp_server as mcp_server
+
+    token = SIGN_IN_FAILURES[check](issuer)
+    with pytest.raises(AuthenticationError) as raised:
+        await issuer.validator().validate(token)
+    app = create_app(runtime.settings, runtime=runtime, validator=issuer.validator())
+    fresh_logs(monkeypatch, deps, mcp_server)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    assert await _Verifier(issuer.validator()).verify_token(token) is None
+
+    out = capsys.readouterr().out
+    lines = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
+    codes = {
+        line["event"]: line.get("check")
+        for line in lines
+        if "authentication_failed" in line["event"]
+    }
+    assert codes == {"authentication_failed": check, "mcp_authentication_failed": check}
+    for private in (NAME, str(raised.value), token):
+        assert private not in out
+
+
+def test_every_sign_in_check_has_a_tested_failure():
+    assert set(SIGN_IN_FAILURES) == set(AuthCheck) - {AuthCheck.UNSPECIFIED}
+
+
+def test_every_refusal_in_the_validator_names_a_check():
+    tree = ast.parse(Path(tokens.__file__).read_text(encoding="utf-8"))
+    refusals = [
+        node.exc
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call)
+        and getattr(node.exc.func, "id", "") == "AuthenticationError"
+    ]
+    unnamed = [call.lineno for call in refusals if len(call.args) < 2]
+    assert len(refusals) == len(SIGN_IN_FAILURES)
+    assert not unnamed, f"refusals without a check code: {unnamed}"
+
+
+@pytest.mark.parametrize("given", [AuthCheck.UNSPECIFIED, NAME], ids=["none", "free-text"])
+async def test_a_code_outside_the_closed_set_is_never_logged(monkeypatch, capsys, given):
+    import zentral.mcp_server as mcp_server
+
+    class Custom:
+        async def validate(self, _token: str) -> None:
+            raise AuthenticationError(f"refused {NAME}", given)
+
+    fresh_logs(monkeypatch, mcp_server)
+    assert await _Verifier(Custom()).verify_token("x") is None
+    out = capsys.readouterr().out
+    assert NAME not in out
+    assert json.loads(out.splitlines()[-1])["check"] == "unspecified"
+
+
 async def test_failed_ai_provider_logs_the_type(client, auth, worker, runtime, monkeypatch, capsys):
     import zentral.ai.service as service
 
@@ -279,7 +373,7 @@ def test_no_log_call_in_the_code_base_quotes_a_caught_exception():
                     for inner in ast.walk(call)
                     if isinstance(inner, ast.Call)
                     and isinstance(inner.func, ast.Name)
-                    and inner.func.id in {"type", "error_fields"}
+                    and inner.func.id in {"type", "error_fields", "sign_in_failure_fields"}
                     for arg in inner.args
                 }
                 values = [*call.args, *(k.value for k in call.keywords if k.arg != "exc_info")]

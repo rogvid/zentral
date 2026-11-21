@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Protocol
 
 import httpx
@@ -37,6 +38,7 @@ import structlog
 from jwt import PyJWK
 
 from zentral.config import Settings
+from zentral.logging import error_fields
 from zentral.security.principal import Principal
 from zentral.security.rbac import Role
 
@@ -49,8 +51,34 @@ ALLOWED_ALGORITHMS = frozenset(
 LEEWAY_SECONDS = 60
 
 
+class AuthCheck(StrEnum):
+    """Which sign-in check failed: fixed codes, so a log line holds no token or user data."""
+
+    MALFORMED = "malformed_token"
+    UNSUPPORTED_ALGORITHM = "unsupported_algorithm"
+    MISSING_KEY_ID = "missing_key_id"
+    UNKNOWN_SIGNING_KEY = "unknown_signing_key"
+    REJECTED = "token_rejected"  # signature, expiry, audience or issuer: see ``cause``
+    WRONG_TENANT = "wrong_tenant"
+    UNUSABLE_SUBJECT = "unusable_subject"
+    APP_HAS_SCOPES = "app_token_has_scopes"
+    SERVICE_NO_ROLE = "service_token_no_role"
+    SCOPE_MISSING = "scope_missing"
+    UNSPECIFIED = "unspecified"  # a custom ``Authenticator`` that names no check
+
+
 class AuthenticationError(Exception):
-    """Token missing or invalid. The message is safe to log, not to return to clients."""
+    """Token missing or invalid. Log ``check``; the message is not for logs or clients."""
+
+    def __init__(self, message: str = "", check: AuthCheck = AuthCheck.UNSPECIFIED) -> None:
+        super().__init__(message)
+        # Anything else is refused, so that only a code from the closed set is ever logged.
+        self.check = check if isinstance(check, AuthCheck) else AuthCheck.UNSPECIFIED
+
+
+def sign_in_failure_fields(exc: AuthenticationError) -> dict[str, str]:
+    """Log fields for a refused token: its types and fixed check code, never its text."""
+    return {**error_fields(exc), "check": exc.check.value}
 
 
 class Authenticator(Protocol):
@@ -275,15 +303,17 @@ class TokenValidator:
         try:
             header = jwt.get_unverified_header(token)
         except jwt.PyJWTError as exc:
-            raise AuthenticationError("malformed token") from exc
+            raise AuthenticationError("malformed token", AuthCheck.MALFORMED) from exc
         if header.get("alg") not in profile.algorithms:
-            raise AuthenticationError("unsupported signing algorithm")
+            raise AuthenticationError(
+                "unsupported signing algorithm", AuthCheck.UNSUPPORTED_ALGORITHM
+            )
         kid = header.get("kid")
         if not isinstance(kid, str):
-            raise AuthenticationError("token has no key id")
+            raise AuthenticationError("token has no key id", AuthCheck.MISSING_KEY_ID)
         key = await self._keys.get_key(kid)
         if key is None:
-            raise AuthenticationError("unknown signing key")
+            raise AuthenticationError("unknown signing key", AuthCheck.UNKNOWN_SIGNING_KEY)
         try:
             claims: dict[str, Any] = jwt.decode(
                 token,
@@ -295,16 +325,18 @@ class TokenValidator:
                 options={"require": ["exp", "iat", "iss", "aud"]},
             )
         except jwt.PyJWTError as exc:
-            raise AuthenticationError(f"token rejected: {type(exc).__name__}") from exc
+            raise AuthenticationError(
+                f"token rejected: {type(exc).__name__}", AuthCheck.REJECTED
+            ) from exc
         return self._principal_from(claims)
 
     def _principal_from(self, claims: dict[str, Any]) -> Principal:
         profile = self.profile
         if profile.tenant_claim and claims.get(profile.tenant_claim) != profile.tenant_id:
-            raise AuthenticationError("token is from a different tenant")
+            raise AuthenticationError("token is from a different tenant", AuthCheck.WRONG_TENANT)
         subject = claims.get(profile.subject_claim)
         if not isinstance(subject, str) or not subject or len(subject) > 64:
-            raise AuthenticationError("token has no usable subject")
+            raise AuthenticationError("token has no usable subject", AuthCheck.UNUSABLE_SUBJECT)
 
         groups = _strings(_claim(claims, profile.groups_claim))
         external = _strings(_claim(claims, profile.roles_claim))
@@ -318,11 +350,15 @@ class TokenValidator:
 
         if is_service:
             if profile.entra_app_tokens and scopes:
-                raise AuthenticationError("app token must not carry delegated scopes")
+                raise AuthenticationError(
+                    "app token must not carry delegated scopes", AuthCheck.APP_HAS_SCOPES
+                )
             if not roles:
-                raise AuthenticationError("service token carries no Zentral role")
+                raise AuthenticationError(
+                    "service token carries no Zentral role", AuthCheck.SERVICE_NO_ROLE
+                )
         elif profile.required_scope and profile.required_scope not in scopes:
-            raise AuthenticationError("required scope missing")
+            raise AuthenticationError("required scope missing", AuthCheck.SCOPE_MISSING)
 
         name = claims.get(profile.name_claim) or claims.get("app_displayname") or ""
         return Principal.build(

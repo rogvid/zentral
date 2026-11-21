@@ -10,10 +10,13 @@ from fastapi import Depends, HTTPException, Request, status
 
 from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
-from zentral.logging import error_fields
 from zentral.runtime import Runtime
 from zentral.security.principal import Principal
-from zentral.security.tokens import AuthenticationError, Authenticator
+from zentral.security.tokens import (
+    AuthenticationError,
+    Authenticator,
+    sign_in_failure_fields,
+)
 from zentral.services.context import Ctx, resolve_team_ids, touch_user
 
 log = structlog.get_logger(__name__)
@@ -61,7 +64,7 @@ async def get_principal(request: Request) -> Principal:
         principal = await validator.validate(token.strip())
     except AuthenticationError as exc:
         limiter.allow(f"authfail:{ip}", runtime.settings.auth_failure_limit_per_minute)
-        log.warning("authentication_failed", **error_fields(exc), ip=ip)
+        log.warning("authentication_failed", **sign_in_failure_fields(exc), ip=ip)
         raise _unauthenticated() from exc
     if not limiter.allow(f"p:{principal.subject}", runtime.settings.rate_limit_per_minute):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limit exceeded")

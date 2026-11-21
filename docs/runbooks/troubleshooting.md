@@ -19,27 +19,32 @@ and the logs of the API and worker. Every client-visible error carries an
 | Redirect loop | Redirect URI in the IdP must be exactly `https://host/` (type SPA for Entra) |
 | "Sign-in response did not match the request" | Sign-in was started in another tab or the session storage was cleared; try again |
 | Signed in but "role does not include access" | No Zentral role in the token. `GET /api/v1/me` shows the roles Zentral derived |
-| Every API call `401` | See the `authentication_failed` log line; its `cause` names a failed token check |
+| Every API call `401` | See the `authentication_failed` log line; its `check` names the failed check |
 | `400` on every request | `Host` header not in `ZENTRAL_ALLOWED_HOSTS` — typical behind a proxy that rewrites the host |
 
-The `cause` in `authentication_failed`:
+The `check` in `authentication_failed`, a fixed code that holds no token or user data:
+
+| `check` | Meaning |
+|---|---|
+| `malformed_token` | Not a JWT: the client is sending something else as its bearer token |
+| `unsupported_algorithm` | Add the algorithm to `ZENTRAL_OIDC_ALGORITHMS` (asymmetric only) |
+| `missing_key_id` | The token's header has no `kid`, so its signing key cannot be found |
+| `unknown_signing_key` | Keys not fetched (see `jwks_refresh_failed`) or token from another IdP |
+| `token_rejected` | Signature or a standard claim failed: `cause` says which (below) |
+| `wrong_tenant` | Token is from another Entra tenant |
+| `unusable_subject` | The subject claim is missing, empty or over 64 characters |
+| `app_token_has_scopes` | An application token also carries delegated scopes |
+| `service_token_no_role` | App role not granted / not mapped |
+| `scope_missing` | The web client did not request the API scope |
+| `unspecified` | A custom validator refused the token without naming a check |
+
+The `cause` with `token_rejected`:
 
 | `cause` | Meaning |
 |---|---|
 | `InvalidAudienceError` | Token is for another application: wrong API client ID / audience |
 | `InvalidIssuerError` | Wrong tenant/issuer; for Entra, `requestedAccessTokenVersion` is not 2 |
 | `ExpiredSignatureError` | Expired - clock skew over 60 s, or a client that does not refresh |
-
-With no `cause`, one of Zentral's own checks refused the token.
-The log does not say which, because exception text stays out of it.
-Check these in turn:
-
-| Check | What to do |
-|---|---|
-| Unknown signing key | Keys not fetched (see `jwks_refresh_failed`) or token from another IdP |
-| Unsupported signing algorithm | Add the algorithm to `ZENTRAL_OIDC_ALGORITHMS` (asymmetric only) |
-| Required scope missing | The web client did not request the API scope |
-| Service token carries no Zentral role | App role not granted / not mapped |
 
 ## People cannot see tickets
 

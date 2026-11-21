@@ -32,11 +32,14 @@ from starlette.applications import Starlette
 
 from zentral.api.ratelimit import RateLimiter
 from zentral.audit.trail import RequestMeta
-from zentral.logging import error_fields
 from zentral.runtime import Runtime
 from zentral.schemas import MessageCreate, TicketCreate, TicketUpdate
 from zentral.security.principal import Principal
-from zentral.security.tokens import AuthenticationError, Authenticator
+from zentral.security.tokens import (
+    AuthenticationError,
+    Authenticator,
+    sign_in_failure_fields,
+)
 from zentral.services import admin, insights, templates, tickets
 from zentral.services.context import Ctx, record_denied, resolve_team_ids, touch_user
 from zentral.services.errors import DomainError, NotFound, PermissionDenied
@@ -69,7 +72,7 @@ class _Verifier(TokenVerifier):
         try:
             principal = await self._validator.validate(token)
         except AuthenticationError as exc:
-            log.warning("mcp_authentication_failed", **error_fields(exc))
+            log.warning("mcp_authentication_failed", **sign_in_failure_fields(exc))
             return None
         return AccessToken(
             token="",  # the raw token is not needed downstream; do not keep it around # nosec B106

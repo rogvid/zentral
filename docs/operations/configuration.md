@@ -225,4 +225,7 @@ Generated from the code (`scripts/gen_docs.py`); CI fails if it is out of date.
 | `ZENTRAL_HOOK_RATE_LIMIT_PER_MINUTE` | `120` | int |
 | `ZENTRAL_AUTH_FAILURE_LIMIT_PER_MINUTE` | `30` | int |
 | `ZENTRAL_LOG_LEVEL` | `INFO` | str |
+| `ZENTRAL_SENTRY_DSN` | *(empty)* | str |
+| `ZENTRAL_SENTRY_RELEASE` | *(empty)* | str |
+| `ZENTRAL_SENTRY_TRACES_SAMPLE_RATE` | `1.0` | float |
 <!-- END GENERATED -->

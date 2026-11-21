@@ -269,6 +269,12 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # --- Error monitoring -----------------------------------------------------
+    # Empty: off. Only code-level data is sent (zentral/observability.py).
+    sentry_dsn: str = ""
+    sentry_release: str = ""
+    sentry_traces_sample_rate: float = Field(default=1.0, ge=0, le=1)
+
     # ------------------------------------------------------------------ helpers
     @property
     def is_production(self) -> bool:

@@ -24,6 +24,7 @@ from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
 from zentral.logging import configure_logging
 from zentral.mcp_server import build_mcp, mcp_asgi_app
+from zentral.observability import init_sentry
 from zentral.runtime import Runtime, build_runtime
 from zentral.security.devauth import LocalIssuer
 from zentral.security.tokens import Authenticator, TokenValidator
@@ -41,6 +42,7 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
+    init_sentry(settings)
     runtime = runtime or build_runtime(settings)
     limiter = RateLimiter()
 

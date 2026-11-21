@@ -40,6 +40,7 @@ from zentral.db.models import (
     Ticket,
     utcnow,
 )
+from zentral.observability import capture_exception
 from zentral.runtime import Runtime
 from zentral.security.principal import Principal
 from zentral.services import attachments, notifications, portal, privacy
@@ -118,6 +119,8 @@ class Worker:
             # Only our own ConnectorError messages are known to be free of content.
             detail = str(exc) if isinstance(exc, ConnectorError) else ""
             error = f"{type(exc).__name__}: {detail}"[:500]
+            if not isinstance(exc, ConnectorError):  # a remote's failure is not a bug here
+                capture_exception(exc)
             log.warning(
                 "job_failed", kind=job.kind, job_id=str(job.id), attempt=job.attempts, error=error
             )

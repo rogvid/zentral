@@ -168,12 +168,14 @@ def init(
 def worker() -> None:
     """Run the background worker (classification, polling, delivery, retention)."""
     from zentral.logging import configure_logging
+    from zentral.observability import init_sentry
     from zentral.runtime import build_runtime
     from zentral.services.jobs import Worker
 
     async def main() -> None:
         settings = get_settings()
         configure_logging(settings.log_level)
+        init_sentry(settings)
         runtime = build_runtime(settings)
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()

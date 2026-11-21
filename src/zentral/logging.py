@@ -5,7 +5,9 @@ of personal data. Rules enforced here and by convention in the code base:
 
 * request bodies, message content, subjects and query strings are never logged;
 * a redaction processor scrubs anything that looks like an e-mail address,
-  token or other identifier from every string value as a safety net;
+  token or other identifier from every string value as a safety net, and so
+  does the handler for tracebacks from any library (an exception's message can
+  quote the request that caused it);
 * security-relevant *events* go to the audit trail (and are mirrored here
   under the ``zentral.audit`` logger for SIEM shipping).
 """
@@ -49,8 +51,20 @@ def _scrub(_: Any, __: str, event: MutableMapping[str, Any]) -> MutableMapping[s
     return event
 
 
+class _RedactingFormatter(logging.Formatter):
+    """Scrubs tracebacks only: other lines are structured and scrubbed already."""
+
+    def formatException(self, ei: Any) -> str:
+        return redact(super().formatException(ei))
+
+    def formatStack(self, stack_info: str) -> str:
+        return redact(super().formatStack(stack_info))
+
+
 def configure_logging(level: str = "INFO") -> None:
     logging.basicConfig(stream=sys.stdout, level=level.upper(), format="%(message)s", force=True)
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(_RedactingFormatter("%(message)s"))
     # Third-party request logging can include URLs with identifiers.
     for noisy in ("httpx", "httpcore", "uvicorn.access", "mcp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -60,8 +74,8 @@ def configure_logging(level: str = "INFO") -> None:
             structlog.stdlib.add_logger_name,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.format_exc_info,  # before _scrub, which then covers its text
             _scrub,
-            structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(level.upper())),

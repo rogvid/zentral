@@ -32,6 +32,14 @@ section for a version as its release notes.
   health check; container log rotation; Caddy pinned to 2.11; `Caddyfile`
   imports extra sites from `sites/*.caddy`.
 
+### Fixed
+
+- Tracebacks on stdout are now scrubbed like every other log value. The text
+  of an unhandled exception could carry e-mail addresses, passwords and other
+  identifiers from the request into the container's log. Secrets are also
+  recognised when quoted, as in `{'password': 'two words'}`. Names and other
+  free text no pattern recognises can still appear in an exception's message.
+
 ## [1.0.0]
 
 The release intended for production. Read **Upgrading** first.

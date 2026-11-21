@@ -97,7 +97,8 @@ async def _audit(rt: Runtime) -> CheckResult:
 async def _identity(rt: Runtime) -> CheckResult:
     s = rt.settings
     if s.auth_mode == "dev":
-        return CheckResult("identity provider", "warn", "development sign-in: anyone can be admin")
+        who = "anyone with the password" if s.dev_auth_password.get_secret_value() else "anyone"
+        return CheckResult("identity provider", "warn", f"development sign-in: {who} can be admin")
     url = s.issuer.rstrip("/") + "/.well-known/openid-configuration"
     try:
         resp = await rt.http.get(url, timeout=10)

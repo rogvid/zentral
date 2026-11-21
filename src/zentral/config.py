@@ -150,6 +150,10 @@ class Settings(BaseSettings):
         default_factory=dict
     )
 
+    # The built-in dev IdP on a reachable test server: the password (at least 32
+    # characters) for its persona picker. Required with auth_mode=dev in production.
+    dev_auth_password: SecretStr = SecretStr("")
+
     # Microsoft Entra ID
     entra_tenant_id: str = ""
     entra_api_client_id: str = ""
@@ -269,6 +273,12 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # --- Error monitoring -----------------------------------------------------
+    # Empty: off. Only code-level data is sent (zentral/observability.py).
+    sentry_dsn: str = ""
+    sentry_release: str = ""
+    sentry_traces_sample_rate: float = Field(default=1.0, ge=0, le=1)
+
     # ------------------------------------------------------------------ helpers
     @property
     def is_production(self) -> bool:
@@ -346,8 +356,11 @@ class Settings(BaseSettings):
             if self.is_production and not self.oidc_issuer.startswith("https://"):
                 problems.append("production requires an https ZENTRAL_OIDC_ISSUER")
         if self.is_production:
-            if self.auth_mode == "dev":
-                problems.append("ZENTRAL_AUTH_MODE=dev is not allowed in production")
+            if self.auth_mode == "dev" and len(self.dev_auth_password.get_secret_value()) < 32:
+                problems.append(
+                    "ZENTRAL_AUTH_MODE=dev in production needs ZENTRAL_DEV_AUTH_PASSWORD "
+                    "(at least 32 characters): without it anyone can become an administrator"
+                )
             if self.database_url.startswith("sqlite"):
                 problems.append("production requires PostgreSQL, not SQLite")
             if "*" in self.cors_origins:

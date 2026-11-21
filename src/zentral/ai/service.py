@@ -19,6 +19,7 @@ from zentral.ai.base import (
 from zentral.ai.providers.rules import RulesProvider
 from zentral.config import Settings
 from zentral.db.models import Message, System, Ticket, TicketPriority
+from zentral.logging import error_fields
 from zentral.security.redaction import redact
 from zentral.services.automation import apply_rules
 from zentral.services.context import Ctx
@@ -102,7 +103,7 @@ async def classify_ticket(ctx: Ctx, provider: AIProvider, ticket_id: int) -> Non
             raw = await provider.classify(inp)
     except (AIError, TimeoutError) as exc:
         # Intake must never depend on model availability.
-        log.warning("ai_provider_failed", provider=provider.name, reason=str(exc))
+        log.warning("ai_provider_failed", provider=provider.name, **error_fields(exc))
         used = RulesProvider(ctx.settings, provider.http)
         raw = await used.classify(inp)
     result = _normalise(raw, categories, frozenset(by_key))

@@ -35,10 +35,17 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "SECRET",
         re.compile(
-            r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b(\s*(?:is|[:=])\s*)(\S+)"
+            r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b(['\"]?\s*(?:is|[:=])\s*)"
+            # A quoted value may hold spaces: {'password': 'two words'}.
+            r"(?:(\")[^\"\n]{0,512}\"|(')[^'\n]{0,512}'|\S+)"
         ),
     ),
 )
+
+
+def _mask_secret(match: re.Match[str]) -> str:
+    quote = match.group(3) or match.group(4) or ""
+    return f"{match.group(1)}{match.group(2)}{quote}[SECRET]{quote}"
 
 
 def redact(text: str) -> str:
@@ -47,7 +54,7 @@ def redact(text: str) -> str:
         return text
     for label, pattern in _PATTERNS:
         if label == "SECRET":
-            text = pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}[SECRET]", text)
+            text = pattern.sub(_mask_secret, text)
         else:
             text = pattern.sub(f"[{label}]", text)
     return text

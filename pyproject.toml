@@ -20,6 +20,7 @@ dependencies = [
     "mcp>=1.20",
     "typer>=0.15",
     "python-multipart>=0.0.33",
+    "sentry-sdk>=2.40",
 ]
 
 [project.optional-dependencies]

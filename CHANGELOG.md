@@ -9,6 +9,14 @@ section for a version as its release notes.
 
 ### Added
 
+- **Error monitoring with Sentry**, off unless configured
+  (`ZENTRAL_SENTRY_DSN`, build argument `VITE_SENTRY_DSN`). Only code-level data
+  is sent: error types, stack frames without variables, endpoint names, status
+  codes, timings and the release.
+- `ZENTRAL_DEV_AUTH_PASSWORD`: development sign-in on a test server in
+  production mode, behind a password of at least 32 characters. Without it
+  production still refuses development sign-in.
+- Deploy workflow for the maintainers' own server (`.github/workflows/deploy.yml`).
 - **Deploy on a single VPS** without Entra ID, another identity provider or a
   KMS: `deploy/compose/zentralctl setup` runs the Compose stack in production
   mode with a bundled Keycloak (`compose.idp.yaml`): password plus required
@@ -23,6 +31,24 @@ section for a version as its release notes.
 - Compose: opt-in `backup` profile with daily database dumps and a freshness
   health check; container log rotation; Caddy pinned to 2.11; `Caddyfile`
   imports extra sites from `sites/*.caddy`.
+
+### Changed
+
+- The release workflow tags images `release-sha-<commit>` instead of
+  `sha-<commit>`, which now belongs to the deploy workflow.
+
+### Fixed
+
+- Tracebacks on stdout are now scrubbed like every other log value. The text
+  of an unhandled exception could carry e-mail addresses, passwords and other
+  identifiers from the request into the container's log. Secrets are also
+  recognised when quoted, as in `{'password': 'two words'}`. Outside
+  development, no exception message reaches stdout or stderr, because no
+  pattern recognises a name. Tracebacks and crash reports show types and stack
+  frames, log fields carry `error` and `cause` types instead of `reason` text,
+  sign-in failures also carry a fixed `check` code,
+  and library warnings and errors lose their text. A refused configuration
+  shows only its type in the log: run `zentral doctor` for the reason.
 
 ## [1.0.0]
 

@@ -6,8 +6,11 @@ same token validation as production — just without a real directory behind it.
 "Signing in" means picking a persona.
 
 **Anyone who can reach it can become an administrator.** It is only mounted
-when ``ZENTRAL_AUTH_MODE=dev``, which ``Settings.validate_for_runtime`` refuses
-in production.
+when ``ZENTRAL_AUTH_MODE=dev``. ``Settings.validate_for_runtime`` refuses that in
+production unless ``ZENTRAL_DEV_AUTH_PASSWORD`` is set: the picker then asks for
+that password (HTTP Basic, any user name), the direct token route is not mounted
+and codes go only to this installation's own origin. It is a stopgap for a test
+server, not a sign-in system: everyone with the password can be anyone.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from html import escape
 from typing import Annotated, Any
 from urllib.parse import urlencode, urlsplit
 
-from fastapi import APIRouter, Form, HTTPException, Query
+from fastapi import APIRouter, Form, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict
 
@@ -74,16 +77,41 @@ class _PersonaIn(BaseModel):
     persona: str
 
 
+def _password_matches(authorization: str | None, password: str) -> bool:
+    """Check an HTTP Basic header; the user name is not part of the secret."""
+    scheme, _, value = (authorization or "").partition(" ")
+    if scheme.lower() != "basic":
+        return False
+    try:
+        decoded = base64.b64decode(value.strip(), validate=True)
+    except ValueError:
+        return False
+    return hmac.compare_digest(decoded.partition(b":")[2], password.encode())
+
+
 def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
     router = APIRouter(include_in_schema=False)
     base = issuer.issuer
+    password = settings.dev_auth_password.get_secret_value()
+    # Production without a password stays shut, even if validation was skipped.
+    gated = settings.is_production or bool(password)
+    warning = (
+        "Test sign-in: everyone with the password can be anyone. Do not enter real personal data."
+        if gated
+        else "Development sign-in: anyone who can reach this page can "
+        "be anyone. Never expose this instance to a network."
+    )
     # code -> (persona, code_challenge, redirect_uri, expires_at)
     codes: dict[str, tuple[str, str, str, float]] = {}
 
     def check_redirect(uri: str) -> str:
         """Only this installation's own origin, or a local dev server, may receive codes."""
         target, own = urlsplit(uri), urlsplit(settings.public_base_url)
-        local = target.hostname in ("localhost", "127.0.0.1") and target.scheme == "http"
+        local = (
+            not settings.is_production
+            and target.hostname in ("localhost", "127.0.0.1")
+            and target.scheme == "http"
+        )
         same = (target.scheme, target.netloc) == (own.scheme, own.netloc)
         if not (local or same) or target.fragment:
             raise HTTPException(400, "redirect_uri is not allowed")
@@ -120,7 +148,14 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
         code_challenge_method: str = "S256",
         client_id: str = CLIENT_ID,
         persona: str | None = None,
+        authorization: Annotated[str | None, Header()] = None,
     ) -> Response:
+        if gated and not (password and _password_matches(authorization, password)):
+            raise HTTPException(
+                401,
+                "password required",
+                headers={"WWW-Authenticate": 'Basic realm="Zentral test sign-in", charset="UTF-8"'},
+            )
         check_redirect(redirect_uri)
         if response_type != "code" or code_challenge_method != "S256" or client_id != CLIENT_ID:
             raise HTTPException(400, "unsupported authorization request")
@@ -144,8 +179,7 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
                 f'<div class="brand">{_MARK} Zentral</div>'
                 "<h1>Who are you today?</h1>"
                 "<p>Pick a person to try Zentral as. Each sees exactly what their role allows.</p>"
-                '<p class="warn">Development sign-in: anyone who can reach this page can '
-                "be anyone. Never expose this instance to a network.</p>"
+                f'<p class="warn">{escape(warning)}</p>'
                 f"<ul>{links}</ul></main></html>"
             )
         if persona not in PERSONAS:
@@ -184,6 +218,9 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
             "token_type": "Bearer",  # nosec B105
             "expires_in": 8 * 3600,
         }
+
+    if settings.is_production:
+        return router
 
     # Convenience for scripts and tests: a token without the browser round trip.
     @router.post("/api/v1/dev/token")

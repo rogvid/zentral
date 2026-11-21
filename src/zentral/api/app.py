@@ -22,8 +22,9 @@ from zentral.api.ratelimit import RateLimiter
 from zentral.api.routes import admin, compliance, hooks, meta, notifications, portal, tickets
 from zentral.api.routes.devidp import build_dev_idp
 from zentral.config import Settings, get_settings
-from zentral.logging import configure_logging
+from zentral.logging import configure_logging, error_fields
 from zentral.mcp_server import build_mcp, mcp_asgi_app
+from zentral.observability import init_sentry
 from zentral.runtime import Runtime, build_runtime
 from zentral.security.devauth import LocalIssuer
 from zentral.security.tokens import Authenticator, TokenValidator
@@ -40,7 +41,8 @@ def create_app(
     validator: Authenticator | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, exception_messages=settings.env == "development")
+    init_sentry(settings)
     runtime = runtime or build_runtime(settings)
     limiter = RateLimiter()
 
@@ -58,8 +60,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        async with mcp.session_manager.run():
-            yield
+        try:
+            async with mcp.session_manager.run():
+                yield
+        except Exception as exc:
+            # The server's own report of this failure is reduced to a bare line.
+            log.error("lifespan_failed", **error_fields(exc), exc_info=exc)
+            raise
         await runtime.aclose()
 
     app = FastAPI(

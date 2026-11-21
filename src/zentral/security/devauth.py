@@ -2,8 +2,8 @@
 
 Issues tokens shaped exactly like Entra ID v2.0 access tokens, signed with an
 RSA key generated in memory at start-up, so that development and tests run
-through the *same* ``TokenValidator`` as production. It cannot be enabled in
-production (``Settings.validate_for_runtime``).
+through the *same* ``TokenValidator`` as production. In production it needs
+``ZENTRAL_DEV_AUTH_PASSWORD`` (``Settings.validate_for_runtime``).
 """
 
 from __future__ import annotations

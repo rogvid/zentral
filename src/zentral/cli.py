@@ -8,7 +8,7 @@ import secrets
 import signal
 from datetime import UTC, date, datetime, time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from sqlalchemy import text
@@ -19,7 +19,18 @@ from zentral.idp.cli import idp_app
 if TYPE_CHECKING:
     from alembic.config import Config as AlembicConfig
 
-app = typer.Typer(no_args_is_help=True, add_completion=False, help="Zentral service desk")
+
+class _ZentralApp(typer.Typer):
+    """The installed command. Typer's own crash report would print the message."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        from zentral.logging import install_crash_hooks
+
+        install_crash_hooks()
+        return typer.main.get_command(self)(*args, **kwargs)
+
+
+app = _ZentralApp(no_args_is_help=True, add_completion=False, help="Zentral service desk")
 db_app = typer.Typer(no_args_is_help=True, help="Database schema management")
 audit_app = typer.Typer(no_args_is_help=True, help="Audit trail tools")
 keys_app = typer.Typer(no_args_is_help=True, help="Key management")
@@ -168,12 +179,14 @@ def init(
 def worker() -> None:
     """Run the background worker (classification, polling, delivery, retention)."""
     from zentral.logging import configure_logging
+    from zentral.observability import init_sentry
     from zentral.runtime import build_runtime
     from zentral.services.jobs import Worker
 
     async def main() -> None:
         settings = get_settings()
-        configure_logging(settings.log_level)
+        configure_logging(settings.log_level, exception_messages=settings.env == "development")
+        init_sentry(settings)
         runtime = build_runtime(settings)
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()

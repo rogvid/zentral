@@ -40,6 +40,8 @@ from zentral.db.models import (
     Ticket,
     utcnow,
 )
+from zentral.logging import error_fields
+from zentral.observability import capture_exception
 from zentral.runtime import Runtime
 from zentral.security.principal import Principal
 from zentral.services import attachments, notifications, portal, privacy
@@ -118,8 +120,14 @@ class Worker:
             # Only our own ConnectorError messages are known to be free of content.
             detail = str(exc) if isinstance(exc, ConnectorError) else ""
             error = f"{type(exc).__name__}: {detail}"[:500]
+            if not isinstance(exc, ConnectorError):  # a remote's failure is not a bug here
+                capture_exception(exc)
             log.warning(
-                "job_failed", kind=job.kind, job_id=str(job.id), attempt=job.attempts, error=error
+                "job_failed",
+                kind=job.kind,
+                job_id=str(job.id),
+                attempt=job.attempts,
+                **error_fields(exc),
             )
 
         async with self.rt.sessions() as session:
@@ -305,7 +313,7 @@ class Worker:
             try:
                 await connector.acknowledge(result.ack)
             except ConnectorError as exc:
-                log.warning("acknowledge_failed", source_id=str(source.id), error=str(exc))
+                log.warning("acknowledge_failed", source_id=str(source.id), **error_fields(exc))
 
     async def _send(self, ctx: Ctx, payload: dict[str, object]) -> None:
         message = await ctx.session.get(Message, uuid.UUID(str(payload["message_id"])))

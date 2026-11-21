@@ -33,8 +33,8 @@ def sign_in_scopes(s: Settings) -> list[str]:
 
 def sign_in_origins(s: Settings) -> list[str]:
     """Origins the browser must reach to sign in (for the Content-Security-Policy)."""
-    if s.auth_mode == "dev":
-        return []
+    if s.auth_mode == "dev":  # same origin; extras are e.g. an error-reporting endpoint
+        return list(s.csp_connect_extra)
     parts = urlsplit(s.issuer)
     return list(dict.fromkeys([f"{parts.scheme}://{parts.netloc}", *s.csp_connect_extra]))
 

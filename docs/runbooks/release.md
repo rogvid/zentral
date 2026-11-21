@@ -44,7 +44,7 @@ Staging is a separate installation with the production configuration and
 
 Publish a staging image from `main` (or a release branch): **Actions →
 Release → Run workflow**. It runs the full CI, then pushes
-`ghcr.io/rogvid/zentral:staging` and `:sha-<commit>`. Deploy the digest from
+`ghcr.io/rogvid/zentral:staging` and `:release-sha-<commit>`. Deploy the digest from
 the workflow summary, then:
 
 ```bash

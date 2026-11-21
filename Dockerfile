@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.10
 #
 # Zentral — single image for the API/web server, the worker and migrations.
 #   docker build -t zentral .
@@ -11,7 +11,12 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
-RUN npm run build
+# All optional: without them the image has no error monitoring. The token is a
+# build secret, so it stays out of the image and its history.
+ARG VITE_SENTRY_DSN=""
+ARG GIT_SHA=""
+RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,env=SENTRY_AUTH_TOKEN \
+    VITE_SENTRY_RELEASE="$GIT_SHA" npm run build
 
 # --- 2. Python dependencies ----------------------------------------------------
 FROM python:3.15-slim AS build
@@ -35,11 +40,13 @@ RUN groupadd --system --gid 10001 zentral \
 COPY --from=build /app/.venv /app/.venv
 COPY --from=web /web/dist /app/web
 
+ARG GIT_SHA=""
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     ZENTRAL_ENV=production \
-    ZENTRAL_STATIC_DIR=/app/web
+    ZENTRAL_STATIC_DIR=/app/web \
+    ZENTRAL_SENTRY_RELEASE="$GIT_SHA"
 
 USER 10001:10001
 WORKDIR /app

@@ -42,5 +42,6 @@ Where zentral differs from the `web-app-stack` skill, with the reason.
 - Sessions: one server process, and every restart or deploy signs everyone out, because the dev sign-in's signing key is per process and in memory.
 - Keys: plain-text keys from sops with `ZENTRAL_ALLOW_ENV_KEYS=true`, because vps-1 has no KMS.
 - Sentry messages: exception messages, request paths and headers are dropped as well, because in a service desk they can quote ticket content, and SQL errors quote their parameters.
+- Sentry location: every event carries an empty `user.geo`, because Sentry otherwise stores the sender's city from their IP, even with `infer_ip: never` and `ip_address: null` (tested against the real ingest).
 - Sentry integrations: auto-enabled integrations are off on the server, because the database, HTTP client, MCP and AI ones would record statements, webhook URLs, tool arguments and prompts.
 - Sentry in the browser: errors only, with no tracing and no Session Replay, because every screen shows tickets and names.

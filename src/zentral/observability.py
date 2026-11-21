@@ -30,7 +30,7 @@ from zentral.config import Settings
 _UNTRACED_PATHS = frozenset({"/healthz", "/readyz"})
 
 _REQUEST_KEPT = frozenset({"method"})
-_EVENT_DROPPED = ("user", "breadcrumbs", "logentry", "message", "extra", "server_name")
+_EVENT_DROPPED = ("breadcrumbs", "logentry", "message", "extra", "server_name")
 
 # Every category is named: the SDK's default for one left out is to collect it.
 _OFF: dict[str, Any] = {"mode": "off"}
@@ -52,6 +52,9 @@ def _scrub_event(event: Any, _hint: Any) -> Any:
     """The last check on every error and transaction before it leaves."""
     for key in _EVENT_DROPPED:
         event.pop(key, None)
+    # Sentry fills in a city from the sender's address unless the event already
+    # has a location, whatever the IP settings say. An empty one stores none.
+    event["user"] = {"geo": {}}
     request = event.get("request")
     if isinstance(request, dict):
         event["request"] = {k: v for k, v in request.items() if k in _REQUEST_KEPT}

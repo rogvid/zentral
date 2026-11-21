@@ -95,6 +95,7 @@ async def test_nothing_private_reaches_sentry(runtime, issuer, captured):
     sent = "\n".join(captured.sent)
     assert "RuntimeError" in sent, "the error itself must still be reported"
     assert "leaky" in sent, "its stack frames must still be reported"
+    assert sent.count('"user":{"geo":{}}') >= 2, "an empty location stops Sentry adding a city"
     leaks = {value: sent.count(value) for value in PRIVATE if value in sent}
     assert not leaks, f"private data sent to Sentry: {leaks}\n{json.dumps(captured.sent)[:3000]}"
 

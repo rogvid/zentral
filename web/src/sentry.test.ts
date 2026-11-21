@@ -18,8 +18,10 @@ describe("scrubEvent", () => {
       exception: { values: [{ type: "TypeError", value: "cannot read Margit", stacktrace: { frames } }] },
     } as ErrorEvent;
 
-    const sent = JSON.stringify(scrubEvent(event));
+    const scrubbed = scrubEvent(event);
+    const sent = JSON.stringify(scrubbed);
 
+    expect(scrubbed.user).toEqual({ geo: {} });
     expect(sent).toContain("TypeError");
     expect(sent).toContain("render");
     for (const value of ["repro@example.com", "203.0.113.77", "Margit", "hunter2", "chair", "4711"]) {

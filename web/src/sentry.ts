@@ -29,7 +29,9 @@ const UNUSED_INTEGRATIONS = new Set(["Breadcrumbs", "BrowserSession", "HttpConte
 
 export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   delete event.request;
-  delete event.user;
+  // Sentry fills in a city from the sender's address unless the event already
+  // has a location, whatever the IP settings say. An empty one stores none.
+  event.user = { geo: {} };
   delete event.breadcrumbs;
   delete event.message;
   delete event.logentry;

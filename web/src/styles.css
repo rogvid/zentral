@@ -322,7 +322,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 input::placeholder, textarea::placeholder { color: var(--faint); }
 textarea { resize: vertical; line-height: 1.55; }
 select:disabled, input:read-only { background: var(--surface-2); }
-.search { max-width: 300px; }
+.search { flex: 1 1 260px; }
 .toolbar select { width: auto; }
 
 .field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
@@ -452,7 +452,7 @@ select:disabled, input:read-only { background: var(--surface-2); }
 .composer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; box-shadow: var(--shadow-lift); }
 .composer-note { background: var(--note); border-color: var(--note-edge); }
 .composer textarea { border-color: var(--border); }
-.composer-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; width: 100%; gap: 10px 12px; }
+.composer-foot { display: flex; flex-wrap: wrap; align-items: center; width: 100%; gap: 10px 12px; }
 .composer-foot .muted { font-size: 12.5px; flex: 1 1 260px; }
 .composer-foot .btn-primary { margin-left: auto; }
 
@@ -575,49 +575,101 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 }
 /* The audit trail keeps every column: long identifiers wrap, and the details take what is left. */
 .audit-table code { overflow-wrap: anywhere; }
+.audit-table .table td:nth-child(4) code { overflow-wrap: normal; } /* action names break only after a dot */
 @media (min-width: 1360px) and (max-width: 1546px) {
   .audit-table .details { max-width: calc(100vw - 1226px); }
 }
+.audit-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+.audit-filters select { width: 100%; }
+@media (max-width: 1100px) { .audit-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .audit-filters { grid-template-columns: minmax(0, 1fr); } }
 
 /* Too narrow for every column: table rows become cards, so nothing is cut off. */
 @media (max-width: 1359px) {
+  .audit-table { container-type: inline-size; }
   .audit-table .table, .audit-table .table tbody { display: block; }
   .audit-table .table thead { display: none; }
-  .audit-table .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  /* Named areas, so the length of an identifier cannot move a cell to another line. */
+  .audit-table .table tbody tr {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 10px;
+    grid-template-areas: "seq time outcome" "actor actor actor" "action action via" "resource resource resource" "details details details";
+    padding: 13px 14px; border-bottom: 1px solid var(--border);
+  }
   .audit-table .table tbody tr:last-child { border-bottom: 0; }
   .audit-table .table td { display: block; padding: 0; border: 0; min-width: 0; }
-  .audit-table .table td:last-child { margin-left: auto; font-size: 12px; max-width: 100%; }
+  .audit-table .table td:nth-child(1) { grid-area: seq; }
+  .audit-table .table td:nth-child(2) { grid-area: time; }
+  .audit-table .table td:nth-child(3) { grid-area: actor; }
+  .audit-table .table td:nth-child(4) { grid-area: action; }
+  .audit-table .table td:nth-child(5) { grid-area: resource; }
+  .audit-table .table td:nth-child(6) { grid-area: outcome; }
+  .audit-table .table td:nth-child(7) { grid-area: via; }
+  .audit-table .table td:nth-child(8) { grid-area: details; font-size: 12px; }
+  .audit-table .details { max-width: 100%; }
+
+  /* Room for two lines, in columns that line up from row to row. */
+  @container (min-width: 860px) {
+    .audit-table .table tbody tr {
+      grid-template-columns: 36px 84px 80px minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas: "seq time time actor action" ". outcome via resource details";
+    }
+  }
 }
 @media (max-width: 1279px) {
+  .ticket-table { container-type: inline-size; }
   .ticket-table .table, .ticket-table .table tbody { display: block; }
   .ticket-table .table thead { display: none; }
-  .ticket-table .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  /* Fixed lines: ticket, then state and system, then owner and due. A chip's length cannot move a cell. */
+  .ticket-table .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  .ticket-table .table tbody tr::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }
   .ticket-table .table tbody tr:last-child { border-bottom: 0; }
-  .ticket-table .table td { display: block; padding: 0; border: 0; }
-  .ticket-table .table td.cell-main { flex: 1 1 100%; max-width: none; min-width: 0; }
-  .ticket-table .table td:nth-child(3):has(> .muted) { display: none; } /* no system yet: say nothing */
+  .ticket-table .table td { display: block; padding: 0; border: 0; min-width: 0; margin-top: 6px; }
+  .ticket-table .table td.cell-main { order: 0; flex: 1 1 100%; max-width: none; margin-top: 0; }
+  .ticket-table .table td:nth-child(2) { order: 1; flex: none; }
+  .ticket-table .table td:nth-child(3) { order: 2; flex: 1 1 0; }
+  .ticket-table .table td:nth-child(3):has(> .muted) { visibility: hidden; } /* no system yet: say nothing, keep the place */
+  .ticket-table .table td:nth-child(3) .chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .ticket-table .table td:nth-child(5) { order: 4; flex: 1 1 0; }
+  .ticket-table .table td:last-child { order: 5; flex: none; font-size: 12px; text-align: right; }
+  .ticket-table .table td:last-child .cell-sub { justify-content: flex-end; }
   .state-cell { flex-direction: row !important; align-items: center; }
-  .ticket-table .table td:last-child { margin-left: auto; font-size: 12px; }
+  .owner-text { min-width: 0; }
+  .owner-text > span:first-child { overflow: hidden; text-overflow: ellipsis; }
   .ticket-table .table tbody tr td:first-child { box-shadow: none; }
   .ticket-table .table tbody tr.row-urgent { box-shadow: inset 3px 0 0 var(--danger); }
   .ticket-table .table tbody tr.row-high { box-shadow: inset 3px 0 0 var(--saffron); }
   .owner-text .cell-sub { display: none; }
+
+  /* Room for one line of details, in columns that line up from row to row. */
+  @container (min-width: 700px) {
+    .ticket-table .table tbody tr::after { display: none; }
+    .ticket-table .table td:nth-child(2) { flex: 0 0 150px; }
+    .ticket-table .table td:nth-child(5) { flex: 0 0 150px; }
+    .ticket-table .table td:last-child { flex: 0 0 180px; }
+  }
 }
 
 /* Phones: the overview becomes a swipeable strip. */
 @media (max-width: 700px) {
   .stats {
     display: grid; grid-auto-flow: column; grid-auto-columns: 44%; grid-template-columns: none;
-    overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px 18px; padding: 2px 16px 6px; scrollbar-width: none;
+    overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; margin: 0 -16px 18px; padding: 2px 16px 6px; scrollbar-width: none;
   }
   .stats::-webkit-scrollbar { display: none; }
   .stat, .stat:nth-child(n + 4) { grid-column: auto; scroll-snap-align: start; }
   .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .tab { white-space: nowrap; }
-  .search { max-width: none; }
   .toolbar > * { flex: 1 1 100%; }
   .hello h1 { font-size: 26px; }
   .bell-label { display: none; } /* the bell keeps its accessible name */
+  /* Card headers: the name, then its chips, then its actions, however long the chips are. */
+  .panel-head > .btn:first-of-type { margin-left: auto; }
+  .panel-head:has(> .chip):has(> .btn) { row-gap: 0; }
+  .panel-head:has(> .chip):has(> .btn) > * { margin-top: 6px; }
+  .panel-head:has(> .chip):has(> .btn) > h2 { order: 0; flex: 1 1 100%; margin: 0; }
+  .panel-head:has(> .chip):has(> .btn) > .chip { order: 1; }
+  .panel-head:has(> .chip):has(> .btn)::after { content: ""; order: 2; flex: 0 0 100%; height: 0; margin: 0; }
+  .panel-head:has(> .chip):has(> .btn) > .btn { order: 3; }
 }
 
 /* --- service-level targets -------------------------------------------------- */

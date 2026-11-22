@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Compass } from "../brand";
 import { useApp, useLoad } from "../context";
 import { query } from "../lib";
@@ -60,7 +60,7 @@ export function AuditPage() {
             : `Tampering detected at event #${verify.first_bad_seq}. Follow the incident runbook.`}
         </p>
       )}
-      <div className="toolbar">
+      <div className="toolbar audit-filters">
         <input className="search" placeholder="Actor ID" aria-label="Actor ID" onChange={(e) => setFilter("actor_id", e.target.value)} />
         <input className="search" placeholder="Action, e.g. ticket.read" aria-label="Action" onChange={(e) => setFilter("action", e.target.value)} />
         <input className="search" placeholder="Resource ID" aria-label="Resource ID" onChange={(e) => setFilter("resource_id", e.target.value)} />
@@ -101,7 +101,14 @@ export function AuditPage() {
                     <code>{e.actor_id}</code>
                   </td>
                   <td>
-                    <code>{e.action}</code>
+                    <code>
+                      {e.action.split(/(?<=\.)/).map((part, i) => (
+                        <Fragment key={i}>
+                          {part}
+                          <wbr />
+                        </Fragment>
+                      ))}
+                    </code>
                   </td>
                   <td>
                     {e.resource_type}

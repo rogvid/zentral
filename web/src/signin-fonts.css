@@ -1,0 +1,3 @@
+/* The app's typefaces for the server-rendered dev sign-in page, served from this origin. */
+@import "@fontsource-variable/fraunces/soft.css";
+@import "@fontsource-variable/inter/index.css";

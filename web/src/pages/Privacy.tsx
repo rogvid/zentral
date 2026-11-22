@@ -67,53 +67,55 @@ export function PrivacyPage() {
   return (
     <>
       <PageHead title="Privacy requests" sub="Handle data-subject access, erasure and objection requests (GDPR Art. 15, 17, 20, 21)." />
-      <form className="card panel form" onSubmit={(e) => void lookup(e)}>
-        <Field label="Data subject's e-mail address" hint="Every lookup is recorded in the audit trail.">
-          <input name="email" type="email" required maxLength={320} autoComplete="off" />
-        </Field>
-        <div>
-          <button className="btn btn-primary">Find person</button>
-        </div>
-      </form>
-
-      {missing && (
-        <Empty art={<Compass />} title="No data held" hint="No requester with this address exists in Zentral. The lookup itself has been recorded." />
-      )}
-
-      {contact && (
-        <div className="card panel">
-          <h2>{contact.display_name ?? contact.email}</h2>
-          <dl className="facts">
-            <dt>E-mail</dt>
-            <dd>{contact.email}</dd>
-            <dt>First seen</dt>
-            <dd>{new Date(contact.created_at).toLocaleDateString()}</dd>
-            <dt>Tickets</dt>
-            <dd>{contact.ticket_count}</dd>
-            <dt>AI processing</dt>
-            <dd>
-              {contact.ai_objected_at
-                ? `Objected ${new Date(contact.ai_objected_at).toLocaleDateString()} — excluded from AI triage and AI agents`
-                : "Allowed (personal data is masked first)"}
-            </dd>
-          </dl>
-          <div className="page-actions">
-            <button className="btn" onClick={() => void exportData(contact)}>
-              Export data (JSON)
-            </button>
-            {can("privacy:restrict") && (
-              <button className="btn" onClick={() => void setObjection(contact, !contact.ai_objected_at)}>
-                {contact.ai_objected_at ? "Withdraw AI objection" : "Record objection to AI processing"}
-              </button>
-            )}
-            {can("privacy:erase") && (
-              <button className="btn btn-danger" onClick={() => setConfirming(true)}>
-                Erase personal data…
-              </button>
-            )}
+      <div className="stack">
+        <form className="card panel form" onSubmit={(e) => void lookup(e)}>
+          <Field label="Data subject's e-mail address" hint="Every lookup is recorded in the audit trail.">
+            <input name="email" type="email" required maxLength={320} autoComplete="off" />
+          </Field>
+          <div>
+            <button className="btn btn-primary">Find person</button>
           </div>
-        </div>
-      )}
+        </form>
+
+        {missing && (
+          <Empty art={<Compass />} title="No data held" hint="No requester with this address exists in Zentral. The lookup itself has been recorded." />
+        )}
+
+        {contact && (
+          <div className="card panel">
+            <h2>{contact.display_name ?? contact.email}</h2>
+            <dl className="facts">
+              <dt>E-mail</dt>
+              <dd>{contact.email}</dd>
+              <dt>First seen</dt>
+              <dd>{new Date(contact.created_at).toLocaleDateString()}</dd>
+              <dt>Tickets</dt>
+              <dd>{contact.ticket_count}</dd>
+              <dt>AI processing</dt>
+              <dd>
+                {contact.ai_objected_at
+                  ? `Objected ${new Date(contact.ai_objected_at).toLocaleDateString()} — excluded from AI triage and AI agents`
+                  : "Allowed (personal data is masked first)"}
+              </dd>
+            </dl>
+            <div className="page-actions">
+              <button className="btn" onClick={() => void exportData(contact)}>
+                Export data (JSON)
+              </button>
+              {can("privacy:restrict") && (
+                <button className="btn" onClick={() => void setObjection(contact, !contact.ai_objected_at)}>
+                  {contact.ai_objected_at ? "Withdraw AI objection" : "Record objection to AI processing"}
+                </button>
+              )}
+              {can("privacy:erase") && (
+                <button className="btn btn-danger" onClick={() => setConfirming(true)}>
+                  Erase personal data…
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {confirming && contact && (
         <Dialog title="Erase personal data" onClose={() => setConfirming(false)}>

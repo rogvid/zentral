@@ -241,7 +241,7 @@ code { font: 12px var(--mono); }
 .sidebar .btn-quiet { color: var(--side-muted); }
 .sidebar .btn-quiet:hover:not(:disabled) { color: var(--side-text); background: var(--side-hover); }
 
-.main { padding: 34px 40px 72px; max-width: 1340px; width: 100%; min-width: 0; animation: rise 0.3s ease both; }
+.main { padding: 34px 40px 72px; max-width: 1340px; width: 100%; min-width: 0; margin-inline: auto; animation: rise 0.3s ease both; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
@@ -330,7 +330,8 @@ select:disabled, input:read-only { background: var(--surface-2); }
 .field-hint { font-size: 12px; color: var(--faint); line-height: 1.45; }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-row { display: flex; gap: 12px; }
-.form-inline { flex-direction: row; align-items: flex-end; }
+.form-inline { flex-direction: row; align-items: flex-start; }
+.form-inline > .btn { margin-top: calc(12px * 1.55 + 5px); } /* level with the inputs, below their labels */
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .group { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .group legend { padding: 0 6px; font-size: 11px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -451,8 +452,9 @@ select:disabled, input:read-only { background: var(--surface-2); }
 .composer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; box-shadow: var(--shadow-lift); }
 .composer-note { background: var(--note); border-color: var(--note-edge); }
 .composer textarea { border-color: var(--border); }
-.composer-foot { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px; }
-.composer-foot .muted { font-size: 12.5px; }
+.composer-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; width: 100%; gap: 10px 12px; }
+.composer-foot .muted { font-size: 12.5px; flex: 1 1 260px; }
+.composer-foot .btn-primary { margin-left: auto; }
 
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
 .facts dt { color: var(--muted); }
@@ -537,23 +539,26 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 }
 
 @media (max-width: 1100px) {
-  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Five tiles: three over two, so no row ends in a gap. */
+  .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .stat { grid-column: span 2; }
+  .stat:nth-child(n + 4) { grid-column: span 3; }
 }
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .sidebar { position: static; height: auto; flex-direction: row; align-items: center; flex-wrap: wrap; padding: 10px 14px; gap: 10px; }
-  .sidebar nav { flex-direction: row; flex-wrap: wrap; }
+  .sidebar nav { order: 1; flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; }
   .sidebar .warning-banner { display: none; }
   .nav-active::before { display: none; }
-  .wordmark span { display: none; }
+  .sidebar .wordmark span { display: none; }
   .sidebar-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; padding: 0; border: 0; }
   .sidebar-foot .user-text, .theme-label { display: none; }
   .main { padding: 22px 16px 48px; }
   .hello h1 { font-size: 27px; }
-  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ticket { grid-template-columns: 1fr; }
   .ticket-side { position: static; }
   .form-row, .form-inline { flex-direction: column; align-items: stretch; }
+  .form-inline > .btn { margin-top: 0; }
   .page-head { flex-direction: column; align-items: flex-start; }
 }
 
@@ -564,33 +569,55 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 .owner-empty { width: 24px; height: 24px; border-radius: 50%; border: 1.5px dashed var(--border-strong); flex: none; }
 .avatar-sm { width: 24px; height: 24px; font-size: 10px; }
 
-/* Phones: tickets become cards, the overview becomes a swipeable strip. */
+/* Laptops: the category goes first, because the system says enough. */
+@media (max-width: 1400px) {
+  .ticket-table .table :is(th, td):nth-child(4) { display: none; }
+}
+/* The audit trail keeps every column: long identifiers wrap, and the details take what is left. */
+.audit-table code { overflow-wrap: anywhere; }
+@media (min-width: 1360px) and (max-width: 1546px) {
+  .audit-table .details { max-width: calc(100vw - 1226px); }
+}
+
+/* Too narrow for every column: table rows become cards, so nothing is cut off. */
+@media (max-width: 1359px) {
+  .audit-table .table, .audit-table .table tbody { display: block; }
+  .audit-table .table thead { display: none; }
+  .audit-table .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  .audit-table .table tbody tr:last-child { border-bottom: 0; }
+  .audit-table .table td { display: block; padding: 0; border: 0; min-width: 0; }
+  .audit-table .table td:last-child { margin-left: auto; font-size: 12px; max-width: 100%; }
+}
+@media (max-width: 1279px) {
+  .ticket-table .table, .ticket-table .table tbody { display: block; }
+  .ticket-table .table thead { display: none; }
+  .ticket-table .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  .ticket-table .table tbody tr:last-child { border-bottom: 0; }
+  .ticket-table .table td { display: block; padding: 0; border: 0; }
+  .ticket-table .table td.cell-main { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .ticket-table .table td:nth-child(3):has(> .muted) { display: none; } /* no system yet: say nothing */
+  .state-cell { flex-direction: row !important; align-items: center; }
+  .ticket-table .table td:last-child { margin-left: auto; font-size: 12px; }
+  .ticket-table .table tbody tr td:first-child { box-shadow: none; }
+  .ticket-table .table tbody tr.row-urgent { box-shadow: inset 3px 0 0 var(--danger); }
+  .ticket-table .table tbody tr.row-high { box-shadow: inset 3px 0 0 var(--saffron); }
+  .owner-text .cell-sub { display: none; }
+}
+
+/* Phones: the overview becomes a swipeable strip. */
 @media (max-width: 700px) {
   .stats {
     display: grid; grid-auto-flow: column; grid-auto-columns: 44%; grid-template-columns: none;
     overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px 18px; padding: 2px 16px 6px; scrollbar-width: none;
   }
   .stats::-webkit-scrollbar { display: none; }
-  .stat { scroll-snap-align: start; }
+  .stat, .stat:nth-child(n + 4) { grid-column: auto; scroll-snap-align: start; }
   .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .tab { white-space: nowrap; }
   .search { max-width: none; }
   .toolbar > * { flex: 1 1 100%; }
-
-  .table-card .table thead { display: none; }
-  .table-card .table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
-  .table-card .table tbody tr:last-child { border-bottom: 0; }
-  .table-card .table td { display: block; padding: 0; border: 0; }
-  .table-card .table td.cell-main { flex: 1 1 100%; max-width: none; min-width: 0; }
-  .table-card .table td:nth-child(4) { display: none; } /* category: the system says enough */
-  .table-card .table td:nth-child(3):has(> .muted) { display: none; } /* no system yet: say nothing */
-  .state-cell { flex-direction: row !important; align-items: center; }
-  .table-card .table td:last-child { margin-left: auto; font-size: 12px; }
-  .table-card .table tbody tr td:first-child { box-shadow: none; }
-  .table-card .table tbody tr.row-urgent { box-shadow: inset 3px 0 0 var(--danger); }
-  .table-card .table tbody tr.row-high { box-shadow: inset 3px 0 0 var(--saffron); }
-  .owner-text .cell-sub { display: none; }
   .hello h1 { font-size: 26px; }
+  .bell-label { display: none; } /* the bell keeps its accessible name */
 }
 
 /* --- service-level targets -------------------------------------------------- */
@@ -625,7 +652,7 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 .tile-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .tile-danger .tile-note { color: var(--danger); font-weight: 600; }
 .tile meter { width: 100%; margin: 6px 0 2px; }
-.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(320px, calc(50% - 8px))), 1fr)); gap: 16px; }
 .chart { position: relative; width: 100%; min-width: 0; }
 .chart-svg { display: block; overflow: visible; }
 .chart-svg:focus-visible { outline: 2px solid var(--saffron); outline-offset: 4px; }
@@ -663,7 +690,7 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 .state-cell .priority { font-size: 12.5px; }
 
 /* Saved replies and merging */
-.composer-templates { max-width: 220px; font-size: 13px; }
+.composer-templates { flex: 0 1 220px; width: auto; min-width: 140px; font-size: 13px; }
 .template-body { white-space: pre-wrap; color: var(--muted); margin: 0; }
 .form-actions-left { display: flex; gap: 8px; }
 .merge summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
@@ -709,7 +736,7 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
   padding: 14px 28px; background: var(--side); color: var(--side-text);
 }
 .portal-brand { display: flex; align-items: center; gap: 14px; color: var(--side-text); }
-.portal-brand > span { color: var(--side-muted); font-size: 13px; letter-spacing: 0.02em; }
+.portal-brand > span:not(.wordmark) { color: var(--side-muted); font-size: 13px; letter-spacing: 0.02em; }
 .portal-brand .mark-tile { fill: rgb(255 255 255 / 9%); }
 .portal-who { display: flex; align-items: center; gap: 10px; }
 .portal-who .muted { color: var(--side-muted); }
@@ -738,13 +765,12 @@ meter::-moz-meter-bar { background: var(--ai); border-radius: 999px; }
 .portal-foot { text-align: center; padding: 18px; }
 @media (max-width: 700px) {
   .portal-bar { padding: 12px 16px; }
-  .portal-brand > span { display: none; }
+  .portal-brand > span:not(.wordmark) { display: none; }
   .portal-item { grid-template-columns: 1fr auto; }
   .portal-item .ticket-key { grid-column: 1 / 3; }
   .portal-item .muted { grid-column: 1 / 3; }
   .rate-option span { display: none; }
 }
-.satisfaction { margin-top: 14px; }
 .satisfaction-score { margin: 0 0 12px; }
 .satisfaction-score strong { font-family: var(--display); font-size: 30px; font-weight: 600; margin-right: 4px; }
 .ticket-rating { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }

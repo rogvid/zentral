@@ -78,7 +78,7 @@ export function AuditPage() {
       ) : page.data.items.length === 0 ? (
         <Empty art={<Compass />} title="No events match" hint="Widen the filters, or check the actor and resource IDs." />
       ) : (
-        <div className="card table-card">
+        <div className="card table-card audit-table">
           <table className="table table-dense">
             <thead>
               <tr>

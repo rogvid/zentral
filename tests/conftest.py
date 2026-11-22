@@ -11,7 +11,8 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from datetime import UTC, datetime, timedelta, tzinfo
+from typing import Any, ClassVar
 
 import httpx
 import pytest
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zentral.api.app import create_app
 from zentral.config import Settings
-from zentral.db import audit_guard
+from zentral.db import audit_guard, models
 from zentral.db.models import Base
 from zentral.doctor import expected_revision
 from zentral.runtime import Runtime, build_runtime
@@ -33,6 +34,31 @@ from zentral.services.jobs import Worker
 # against PostgreSQL (CI does both).
 DATABASE_URL = os.environ.get("ZENTRAL_TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+
+class StrictlyIncreasingClock(datetime):
+    """What ``zentral.db.models.utcnow`` reads during tests.
+
+    A host's wall clock can step backwards (WSL2 does, by about 1.4 s). A new job
+    is then not due yet, an expired link is valid again, and newer rows sort first.
+    Each read here is at least a microsecond after the last, so rows sorted on a
+    timestamp keep the order they were written in.
+    """
+
+    last: ClassVar[datetime] = datetime.min.replace(tzinfo=UTC)
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> datetime:
+        assert tz is UTC
+        cls.last = max(datetime.now(UTC), cls.last + timedelta(microseconds=1))
+        return cls.last
+
+
+@pytest.fixture(autouse=True)
+def strictly_increasing_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Column defaults and imports hold the utcnow function itself, so replacing that
+    # name would miss them. Replace the datetime its body reads instead.
+    monkeypatch.setattr(models, "datetime", StrictlyIncreasingClock)
 
 
 def make_settings(**overrides: Any) -> Settings:

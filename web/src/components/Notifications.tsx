@@ -127,7 +127,7 @@ export function NotificationBell() {
         onClick={() => setOpen((o) => !o)}
       >
         <BellIcon />
-        Notifications
+        <span className="bell-label">Notifications</span>
         {unread > 0 && <span className="bell-count">{unread > 99 ? "99+" : unread}</span>}
       </button>
       {open && (

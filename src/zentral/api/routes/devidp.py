@@ -38,11 +38,11 @@ _CSS = """
 @media (prefers-color-scheme:dark){:root{--bg:#15130f;--card:#1e1b16;--ink:#f0e9dc;--muted:#a99f8f;--line:#36312a;--pine:#7cc8ab}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);
-font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px}
+font:15px/1.5 "Inter Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-feature-settings:"cv11","ss03";padding:24px}
 main{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px;
 box-shadow:0 18px 48px rgb(40 30 15 / 12%)}
-.brand{display:flex;align-items:center;gap:10px;font:600 22px/1 Georgia,serif;margin-bottom:22px}
-h1{font:500 26px/1.2 Georgia,serif;margin:0 0 6px}
+.brand{display:flex;align-items:center;gap:10px;font:600 22px/1 "Fraunces Variable","Iowan Old Style",Georgia,serif;font-variation-settings:"SOFT" 100;margin-bottom:22px}
+h1{font:500 26px/1.2 "Fraunces Variable","Iowan Old Style",Georgia,serif;font-variation-settings:"SOFT" 100;margin:0 0 6px}
 p{margin:0 0 18px;color:var(--muted)}
 .warn{background:rgb(217 143 34 / 14%);color:#93600c;padding:10px 12px;border-radius:10px;font-size:13px}
 @media (prefers-color-scheme:dark){.warn{color:#f0c060}}
@@ -175,6 +175,7 @@ def build_dev_idp(issuer: LocalIssuer, settings: Settings) -> APIRouter:
                 '<!doctype html><html lang="en"><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 "<title>Sign in · Zentral</title>"
+                '<link rel="stylesheet" href="../signin-fonts.css">'
                 '<link rel="stylesheet" href="style.css"><main>'
                 f'<div class="brand">{_MARK} Zentral</div>'
                 "<h1>Who are you today?</h1>"

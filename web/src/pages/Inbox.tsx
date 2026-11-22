@@ -347,7 +347,7 @@ export function InboxPage() {
           <Empty art={<TeaCup />} title="All caught up" hint="Nothing is waiting. A good moment for a cup of tea." />
         )
       ) : (
-        <div className={`card table-card${page.loading ? " is-loading" : ""}`}>
+        <div className={`card table-card ticket-table${page.loading ? " is-loading" : ""}`}>
           <table className="table">
             <thead>
               <tr>

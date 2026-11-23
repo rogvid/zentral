@@ -60,7 +60,7 @@ jobs:
               || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
           fi
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.name.outputs.image }}
           tags: |
